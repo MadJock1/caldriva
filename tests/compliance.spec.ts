@@ -1,0 +1,52 @@
+import { test, expect } from "@playwright/test";
+
+test("classifies a Portuguese installation and preserves supply context in its draft", async ({ page }) => {
+  await page.goto("/tools/electrical");
+  await page.getByRole("button", { name: "Generate building" }).click();
+  await page.getByRole("button", { name: "8. Standards & Compliance" }).click();
+  await expect(page.getByRole("heading", { name: "Standards & Compliance", exact: true })).toBeVisible();
+  await page.getByLabel("Project classification", { exact: true }).selectOption("residential");
+  await page.getByLabel("Project jurisdiction", { exact: true }).selectOption("PT");
+  await page.getByLabel("Assembly type in scope").selectOption("ordinary_persons");
+  await page.getByLabel("EMC scope", { exact: true }).selectOption("fixed_installation");
+  await page.getByRole("button", { name: "400/230 V · three-phase · 50 Hz", exact: true }).click();
+  await expect(page.getByLabel("Earthing arrangement", { exact: true })).toHaveValue("");
+  await page.getByLabel("Earthing arrangement", { exact: true }).selectOption("TT");
+  await page.getByLabel("Supply source", { exact: true }).fill("Utility connection record");
+  await page.getByLabel("Supply characteristics confirmed by project author", { exact: true }).check();
+  await page.getByLabel("Actual earthing arrangement confirmed by project author", { exact: true }).check();
+  await expect(page.locator('[data-reference="rtiebt"] summary')).toContainText("CANDIDATE");
+  await expect(page.locator('[data-reference="lvd"] summary')).toContainText("NOT APPLICABLE");
+  await page.locator('[data-reference="rtiebt"] summary').click();
+  await expect(page.locator('[data-reference="rtiebt"]')).toContainText("SOURCE REVIEW REQUIRED");
+  await expect(page.getByText(/Supply characteristics recorded · PASS/)).toBeVisible();
+  await page.getByRole("button", { name: "Save local draft" }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "Reopen draft" }).click();
+  await page.getByRole("button", { name: "8. Standards & Compliance" }).click();
+  await expect(page.getByLabel("Project classification", { exact: true })).toHaveValue("residential");
+  await expect(page.getByLabel("Earthing arrangement", { exact: true })).toHaveValue("TT");
+  await expect(page.getByLabel("Supply characteristics confirmed by project author", { exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "230 V · single-phase · 50 Hz", exact: true }).click();
+  await expect(page.getByLabel("Supply characteristics confirmed by project author", { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel("Single-phase supply voltage (V)")).toHaveValue("230");
+});
+
+test("screens machinery dates and assembly parts without granting conformity", async ({ page }) => {
+  await page.goto("/tools/electrical");
+  await page.getByRole("button", { name: "8. Standards & Compliance" }).click();
+  await page.getByLabel("Project classification", { exact: true }).selectOption("assembly");
+  await page.getByLabel("Project jurisdiction", { exact: true }).selectOption("PT");
+  await page.getByLabel("Assembly type in scope").selectOption("power");
+  await page.getByLabel("Declared assembly rated current (A)").fill("630");
+  await page.getByLabel("Product placed on EU market").selectOption("yes");
+  await expect(page.locator('[data-reference="61439-2"] summary')).toContainText("CANDIDATE");
+  await expect(page.locator('[data-reference="61439-3"] summary')).toContainText("NOT APPLICABLE");
+  await page.getByLabel("Project classification", { exact: true }).selectOption("machinery");
+  await page.getByLabel("Placing-on-market / service date").fill("2027-01-20");
+  await expect(page.locator('[data-reference="machinery-regulation"] summary')).toContainText("CANDIDATE");
+  await expect(page.locator('[data-reference="machinery-directive"] summary')).toContainText("NOT APPLICABLE");
+  await expect(page.getByText(/Professional approval: NOT ASSESSED/)).toBeVisible();
+  await page.getByLabel("Project jurisdiction", { exact: true }).selectOption("OTHER");
+  await expect(page.locator('[data-reference="machinery-regulation"] summary')).toContainText("NOT EVALUATED");
+});

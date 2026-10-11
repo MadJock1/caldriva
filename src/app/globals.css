@@ -1,26 +1,427 @@
 @import "tailwindcss";
+@plugin "tailwindcss-animate";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@source "../lib/brand.ts";
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --font-sans: var(--font-manrope), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), monospace;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  /* Dark theme (default) */
+  --color-background: #080B11;
+  --color-surface: #121924;
+  --color-surface-elevated: #1B2533;
+  --color-border: #293344;
+  --color-border-strong: #3A4556;
+  --color-text-primary: #F8FAFC;
+  --color-text: var(--color-text-primary);
+  --color-energy-teal: var(--color-primary);
+  --color-steel-blue: var(--color-primary);
+  --color-text-secondary: #A8B5C8;
+  --color-text-muted: #A8B5C8;
+
+  --color-primary: #4F8CFF;
+  --color-primary-hover: #3478F6;
+  --color-primary-muted: #4F8CFF20;
+
+  --color-solar-amber: #FFB800;
+  --color-solar-amber-muted: #FFB80020;
+
+  --color-success: #10B981;
+  --color-success-muted: #10B98120;
+  --color-warning: #F59E0B;
+  --color-warning-muted: #F59E0B20;
+  --color-error: #EF4444;
+  --color-error-muted: #EF444420;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-full: 9999px;
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.4), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+  --shadow-glow: 0 0 20px -5px rgb(79 140 255 / 0.3);
+  --shadow-glow-amber: 0 0 20px -5px rgb(255 184 0 / 0.3);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-fade-in: fade-in 0.2s ease-out;
+  --animate-fade-out: fade-out 0.2s ease-out;
+  --animate-slide-in-from-top: slide-in-from-top 0.3s ease-out;
+  --animate-slide-in-from-bottom: slide-in-from-bottom 0.3s ease-out;
+  --animate-slide-in-from-left: slide-in-from-left 0.3s ease-out;
+  --animate-slide-in-from-right: slide-in-from-right 0.3s ease-out;
+  --animate-scale-in: scale-in 0.2s ease-out;
+  --animate-slide-up-fade: slide-up-fade 0.3s ease-out;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
   }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+  }
+  @keyframes slide-in-from-top {
+    from { transform: translateY(-8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes slide-in-from-bottom {
+    from { transform: translateY(8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes slide-in-from-left {
+    from { transform: translateX(-8px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes slide-in-from-right {
+    from { transform: translateX(8px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+  @keyframes scale-in {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+  @keyframes slide-up-fade {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+/* Light theme variables */
+:root {
+  color-scheme: dark;
+  --background: #080B11;
+  --foreground: #F8FAFC;
+}
+
+.light {
+  color-scheme: light;
+  --background: #F5F7FA;
+  --foreground: #172033;
+  --color-background: #F5F7FA;
+  --color-surface: #FFFFFF;
+  --color-surface-elevated: #E9EEF5;
+  --color-border: #E2E8F0;
+  --color-border-strong: #CBD5E1;
+  --color-text-primary: #172033;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748B;
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-muted: #2563EB20;
+  --color-solar-amber: #E6A700;
+  --color-solar-amber-muted: #E6A70020;
+  --color-success: #059669;
+  --color-success-muted: #05966920;
+  --color-warning: #D97706;
+  --color-warning-muted: #D9770620;
+  --color-error: #DC2626;
+  --color-error-muted: #DC262620;
+}
+
+/* CAD Canvas background support */
+[data-canvas-bg="white"] .cad-canvas,
+[data-canvas-bg="white"] .floor-plan-canvas {
+  background: #FFFFFF !important;
+}
+
+[data-canvas-bg="black"] .cad-canvas,
+[data-canvas-bg="black"] .floor-plan-canvas {
+  background: #080B11 !important;
+}
+
+/* Ensure canvas elements are visible on both backgrounds */
+[data-canvas-bg="white"] .cad-canvas svg,
+[data-canvas-bg="white"] .floor-plan-canvas svg {
+  background: transparent;
+}
+
+[data-canvas-bg="black"] .cad-canvas svg,
+[data-canvas-bg="black"] .floor-plan-canvas svg {
+  background: transparent;
+}
+
+/* Grid lines visibility on both backgrounds */
+[data-canvas-bg="white"] .cad-grid line,
+[data-canvas-bg="white"] .floor-plan-grid line {
+  stroke: #E2E8F0 !important;
+}
+
+[data-canvas-bg="black"] .cad-grid line,
+[data-canvas-bg="black"] .floor-plan-grid line {
+  stroke: #293344 !important;
+}
+
+/* Major grid lines */
+[data-canvas-bg="white"] .cad-grid line.major,
+[data-canvas-bg="white"] .floor-plan-grid line.major {
+  stroke: #CBD5E1 !important;
+}
+
+[data-canvas-bg="black"] .cad-grid line.major,
+[data-canvas-bg="black"] .floor-plan-grid line.major {
+  stroke: #3A4556 !important;
+}
+
+/* Selection highlights visible on both */
+[data-canvas-bg="white"] .selection-highlight,
+[data-canvas-bg="black"] .selection-highlight {
+  stroke: #2563EB !important;
+  stroke-width: 2;
+  fill: #2563EB20 !important;
+}
+
+/* Snap markers visible on both */
+[data-canvas-bg="white"] .snap-marker,
+[data-canvas-bg="black"] .snap-marker {
+  stroke: #2563EB !important;
+  fill: #2563EB !important;
+}
+
+/* Room fills adapt to canvas */
+[data-canvas-bg="white"] .room-fill {
+  fill: #F8FAFC !important;
+  stroke: #E2E8F0 !important;
+}
+
+[data-canvas-bg="black"] .room-fill {
+  fill: #121924 !important;
+  stroke: #293344 !important;
+}
+
+/* Text labels visible on both */
+[data-canvas-bg="white"] .canvas-label {
+  fill: #172033 !important;
+}
+
+[data-canvas-bg="black"] .canvas-label {
+  fill: #F8FAFC !important;
+}
+
+/* Point symbols visible on both */
+[data-canvas-bg="white"] .point-symbol {
+  fill: #FFFFFF !important;
+  stroke: #2563EB !important;
+}
+
+[data-canvas-bg="black"] .point-symbol {
+  fill: #121924 !important;
+  stroke: #4F8CFF !important;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 88px;
+}
+
+.studio-workspace { padding: 16px; max-width: 1600px; margin-inline: auto; }
+.studio-map { height: clamp(320px, 55vh, 600px); isolation: isolate; }
+.studio-map .leaflet-container { height: 100%; }
+.studio-controls { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+.studio-controls > * { min-width: 0; }
+@media (min-width: 1024px) {
+  .studio-body { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; }
+  .studio-body > section { grid-column: 2; grid-row: 1; align-self: start; }
+  .studio-controls { display: contents; }
+  .studio-controls > aside { grid-column: 1; grid-row: 1; }
+  .studio-controls > div { grid-column: 1 / -1; }
+}
+.studio-workspace select { background: var(--color-surface); color: var(--color-text-primary); }
+@media (max-width: 767px) {
+  .studio-workspace { padding: 12px; }
+  .studio-map { height: 340px; }
+  .studio-controls { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+@utility container {
+  margin-inline: auto;
+  padding-inline: 1rem;
+  max-width: 1280px;
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility focus-ring {
+  @apply focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+}
+
+@utility card {
+  @apply bg-surface border border-border rounded-2xl shadow-sm;
+}
+
+@utility card-elevated {
+  @apply bg-surface-elevated border border-border rounded-2xl shadow-md;
+}
+
+@utility panel {
+  @apply bg-surface border border-border rounded-xl;
+}
+
+@utility input-base {
+  @apply flex h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-muted transition-colors duration-200;
+  @apply focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+  @apply disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-surface/50;
+}
+
+@utility btn-base {
+  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98];
+}
+
+@utility btn-primary {
+  @apply btn-base bg-primary text-white hover:bg-primary-hover shadow-sm hover:shadow-glow;
+}
+
+@utility btn-secondary {
+  @apply btn-base bg-surface-elevated text-text-primary border border-border hover:bg-surface hover:border-border-strong;
+}
+
+@utility btn-ghost {
+  @apply btn-base text-text-secondary hover:bg-surface hover:text-text-primary;
+}
+
+@utility btn-destructive {
+  @apply btn-base bg-error text-white hover:bg-red-600 shadow-sm;
+}
+
+@utility btn-outline {
+  @apply btn-base border border-border bg-transparent hover:bg-surface hover:border-border-strong;
+}
+
+@utility link-primary {
+  @apply text-primary underline-offset-2 hover:underline transition-colors;
+}
+
+/* Leaflet map dark mode fixes */
+.leaflet-container {
+  background: var(--color-surface);
+}
+
+.leaflet-popup-content-wrapper {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.leaflet-popup-tip {
+  background: var(--color-surface-elevated);
+}
+
+.leaflet-control-zoom {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.leaflet-control-zoom a {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  width: 36px;
+  height: 36px;
+  line-height: 34px;
+}
+
+.leaflet-control-zoom a:hover {
+  background: var(--color-surface-elevated);
+  color: var(--color-primary);
+}
+
+.leaflet-control-attribution {
+  background: rgba(8, 11, 17, 0.8);
+  color: var(--color-text-muted);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(8px);
+}
+
+.leaflet-control-attribution.leaflet-control-attribution-expanded {
+  background: rgba(8, 11, 17, 0.95);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+/* Selection */
+::selection {
+  background: var(--color-primary-muted);
+  color: var(--color-text-primary);
+}
+
+/* Recharts dark mode */
+.recharts-cartesian-axis-tick text,
+.recharts-legend-wrapper text,
+.recharts-tooltip-wrapper {
+  fill: var(--color-text-secondary) !important;
+}
+
+.recharts-cartesian-grid line {
+  stroke: var(--color-border) !important;
+}
+
+.recharts-tooltip-wrapper {
+  background: var(--color-surface-elevated) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-xl) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+/* Focus visible polyfill */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Utility for text gradient */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-solar-amber;
 }

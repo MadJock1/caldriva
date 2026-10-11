@@ -1,0 +1,12 @@
+"use client";
+import { useState, useTransition } from "react";
+import Link from "next/link";
+import { deleteBuilding, listBuildings } from "@/app/dashboard/buildings/actions";
+import type { CloudSummary } from "@/lib/cloud-building";
+import { Button } from "@/components/ui/button";
+export function CloudBuildings({ initial }: { initial: CloudSummary[] }) {
+  const [items, setItems] = useState(initial);
+  const [message, setMessage] = useState("");
+  const [busy, start] = useTransition();
+  return <><p className="text-text-muted my-5">Your latest 100 saved building drafts. Calculated solar results are not yet stored in your account.</p><Link className="underline" href="/tools/solar">Create a building →</Link><Button variant="outline" className="ml-5" disabled={busy} onClick={() => start(async () => { try { const response = await listBuildings(); if (response.error) setMessage(response.error); else if (response.data) { setItems(response.data); setMessage("Building list refreshed."); } } catch { setMessage("Could not refresh. Please retry."); } })}>Refresh</Button><p role="status" className="my-5">{message}</p>{!items.length ? <div className="border rounded-xl bg-surface p-8"><h2 className="text-xl font-semibold">No cloud buildings yet</h2><p className="mt-3 text-text-muted">Open Building Studio, enter your building details, then choose Save to account.</p></div> : <ul className="grid md:grid-cols-2 gap-5">{items.map(item => <li key={item.id} className="border rounded-xl bg-surface p-6"><h2 className="text-xl font-semibold break-words">{item.name}</h2><p className="mt-2 text-sm text-text-muted">Version {item.version} · {item.updated_at.slice(0, 10)}</p><div className="mt-5 flex flex-wrap gap-5 items-center"><Link className="underline" href={`/tools/solar?building=${item.id}`}>Open in studio</Link><Link className="underline" href={`/dashboard/buildings/${item.id}/files`}>Files →</Link><Button variant="outline" disabled={busy} onClick={() => { if (!window.confirm(`Delete “${item.name}” from your account? This cannot be undone.`)) return; start(async () => { try { const response = await deleteBuilding({ id: item.id, version: item.version }); if (response.error) setMessage(response.error); else { setItems(list => list.filter(b => b.id !== item.id)); setMessage("Cloud building deleted. Local drafts are unchanged."); } } catch { setMessage("Delete failed. Please retry."); } }); }}>Delete</Button></div></li>)}</ul>}</>;
+}
