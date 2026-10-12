@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { capacity, financialScenario, pvgisAspect, solarInputSchema } from "./solar";
-import { horizontalRoofArea, initialBuilding } from "./building";
+import { buildingSchema, horizontalRoofArea, initialBuilding } from "./building";
 describe("solar units and assumptions", () => {
   it("converts panel Wp to system kWp", () => { expect(capacity(initialBuilding.solar)).toBe(4.3); });
   it("converts compass orientation to PVGIS convention", () => { expect([0, 90, 180, 270, 360].map(pvgisAspect)).toEqual([-180, -90, 0, 90, 180]); });
@@ -20,4 +20,8 @@ describe("roof geometry", () => {
     expect(horizontalRoofArea([[0, 0], [0, .001], [.001, .001], [.001, 0]])).toBeCloseTo(12364.35, 0);
   });
   it("rejects crossed edges", () => { expect(() => horizontalRoofArea([[0, 0], [.001, .001], [0, .001], [.001, 0]])).toThrow(/cross/); });
+  it("preserves obstacle geometry in saved building drafts", () => {
+    const restored = buildingSchema.parse(JSON.parse(JSON.stringify({ ...initialBuilding, roofObstacles: [[[38.7, -9.1], [38.7, -9.0999], [38.7001, -9.0999]]] })));
+    expect(restored.roofObstacles).toHaveLength(1);
+  });
 });

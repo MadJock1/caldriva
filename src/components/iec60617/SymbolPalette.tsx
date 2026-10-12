@@ -1,23 +1,29 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { ALL_IC60617_SYMBOLS, getSymbolsByCategory, getVerifiedSymbols, IEC_VERIFIED, IEC_KNOWN_CONVENTION, IEC_UNVERIFIED, type IECSymbolMetadata, type SymbolPrimitive } from "@/lib/electrical";
 
 interface SymbolPaletteProps {
   onSymbolSelected: (symbol: IECSymbolMetadata) => void;
   showAll?: boolean;
   categoryFilter?: string;
+  symbolIds?: readonly string[];
 }
 
 export const SymbolPalette: React.FC<SymbolPaletteProps> = ({
   onSymbolSelected,
   showAll = false,
   categoryFilter,
+  symbolIds,
 }) => {
+  const [query, setQuery] = useState("");
   const symbols = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    const matches = (symbol: IECSymbolMetadata) => !search || `${symbol.name} ${symbol.category} ${symbol.displayLabel}`.toLowerCase().includes(search);
+    if (symbolIds) return ALL_IC60617_SYMBOLS.filter(symbol => symbolIds.includes(symbol.symbolId) && matches(symbol));
     if (categoryFilter) {
-      return getSymbolsByCategory(categoryFilter);
+      return getSymbolsByCategory(categoryFilter).filter(matches);
     }
-    return showAll ? ALL_IC60617_SYMBOLS : getVerifiedSymbols();
-  }, [categoryFilter, showAll]);
+    return (showAll ? ALL_IC60617_SYMBOLS : getVerifiedSymbols()).filter(matches);
+  }, [categoryFilter, query, showAll, symbolIds]);
 
   // Compute counts from full array to avoid TypeScript narrowing issues
   const verifiedCount = useMemo(() => ALL_IC60617_SYMBOLS.filter((s) => s.verificationStatus === IEC_VERIFIED).length, []);
@@ -50,6 +56,7 @@ export const SymbolPalette: React.FC<SymbolPaletteProps> = ({
           {verifiedCount} verified / {knownCount} convention / {unverifiedCount} unverified
         </div>
       </div>
+      <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search symbols" aria-label="Search electrical symbols" style={{ width: "100%", marginBottom: 8, padding: "6px 8px", border: "1px solid #ccd1d8", borderRadius: 4, fontSize: 12 }} />
 
       {/* Category filter */}
       {showAll && (

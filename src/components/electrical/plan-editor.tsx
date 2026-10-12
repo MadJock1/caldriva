@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { SymbolPalette } from "@/components/iec60617/SymbolPalette";
 import { planDxf } from "@/lib/electrical/cad-export";
 import {
   autoRoutePlan,
@@ -10,6 +11,7 @@ import {
   countPoints,
   ensurePlan,
   generateAllPoints,
+  generatePhysicalRoutes,
   generatePointsForPlanRoom,
   normalizeRect,
   planForFloor,
@@ -20,15 +22,25 @@ import {
   pointKindLabels,
   pointRequiresCircuit,
   rectArea,
+  roomGeometryDiagnostics,
   removePlanPoint,
   removePlanRoom,
+  removeRoutingZone,
   ROOM_TYPES,
   roomTypeLabels,
   routeLength,
+  routeDiagnostics,
   setPlanSize,
+  setCadWires,
+  setCadJunctions,
+  snapToTerminal,
+  moveWireVertex,
+  createJunction,
   syncLoadsFromPlan,
   updatePlanPoint,
+  wireWithTerminalSnaps,
   upsertPlanRoom,
+  upsertRoutingZone,
   clearPlanPoints,
   addPlanPoint,
   POINT_KINDS,
@@ -37,19 +49,31 @@ import {
   type PlanRoom,
   type PointKind,
   type Rect,
+  type RoutingZone,
   type RoomType,
   type XY,
+  getSymbolById,
+  type SymbolPrimitive,
+  RESIDENTIAL_SYMBOL_IDS,
+  registeredSymbol,
 } from "@/lib/electrical";
 
 const SCALE = 44;
 const GRID_SNAP = 0.1; // 0.1 m = 10 cm
+const ELECTRICAL_SYMBOL_TOOLS = [
+  { id: "CAL-SOCKET-001", label: "Socket" },
+  { id: "CAL-LIGHT-001", label: "Light" },
+  { id: "CAL-SWITCH-001", label: "Switch" },
+  { id: "CAL-MCB-001", label: "MCB" },
+  { id: "CAL-TERMINAL-001", label: "Dedicated" },
+] as const;
 const snap = (v: number) => Number((Math.round(v / GRID_SNAP) * GRID_SNAP).toFixed(3));
 
 function snapRect(rect: Rect): Rect {
   return { x: snap(rect.x), y: snap(rect.y), w: snap(rect.w), h: snap(rect.h) };
 }
 
-type CadTool = "select" | "room" | "pan" | "add-symbol";
+type CadTool = "select" | "room" | "pan" | "add-symbol" | "wire" | "junction";
 
 type SnapTarget = 
   | { kind: "grid"; point: XY }
@@ -75,6 +99,7 @@ type Drag =
   | { mode: "move"; from: XY; room: PlanRoom; rooms: PlanRoom[] }
   | { mode: "resize"; from: XY; room: PlanRoom }
   | { mode: "point"; from: XY; point: ElectricalPoint }
+  | { mode: "wire-vertex"; wireId: string; index: number }
   | { mode: "marquee"; start: XY }
   | { mode: "pan"; from: XY }
   | null;
@@ -91,6 +116,12 @@ function toPlan(e: { clientX: number; clientY: number }, svg: SVGSVGElement | nu
 }
 
 function dist2(a: XY, b: XY) { return (a.x - b.x) ** 2 + (a.y - b.y) ** 2; }
+
+function nextWireId(ids: string[]) {
+  const taken = new Set(ids); let index = 1;
+  while (taken.has(`wire-${index}`)) index += 1;
+  return `wire-${index}`;
+}
 
 function findSnapTargets(
   cursor: XY,
@@ -148,12 +179,24 @@ function applySnap(cursor: XY, targets: SnapTarget[]): { point: XY; guides: Snap
   return { point: { x: guides.find(t => t.kind === "alignment" && t.axis === "x")?.point.x ?? snap(cursor.x), y: guides.find(t => t.kind === "alignment" && t.axis === "y")?.point.y ?? snap(cursor.y) }, guides };
 }
 
+function LibrarySymbol({ primitives, colour }: { primitives: SymbolPrimitive[]; colour: string }) {
+  const scale = 14;
+  return <>{primitives.map((primitive, index) => {
+    if (primitive.type === "line") return <line key={index} x1={primitive.x1 * scale} y1={-primitive.y1 * scale} x2={primitive.x2 * scale} y2={-primitive.y2 * scale} stroke={colour} vectorEffect="non-scaling-stroke" />;
+    if (primitive.type === "circle") return <circle key={index} cx={primitive.cx * scale} cy={-primitive.cy * scale} r={primitive.r * scale} fill="var(--color-background)" stroke={colour} vectorEffect="non-scaling-stroke" />;
+    if (primitive.type === "rect") return <rect key={index} x={primitive.x * scale} y={-(primitive.y + primitive.height) * scale} width={primitive.width * scale} height={primitive.height * scale} fill="var(--color-background)" stroke={colour} vectorEffect="non-scaling-stroke" />;
+    if (primitive.type === "polyline") return <polyline key={index} points={primitive.points.map(point => `${point.x * scale},${-point.y * scale}`).join(" ")} fill={primitive.closed ? "var(--color-background)" : "none"} stroke={colour} vectorEffect="non-scaling-stroke" />;
+    return <text key={index} x={primitive.x * scale} y={-primitive.y * scale} textAnchor="middle" fill={colour} fontSize={primitive.height * scale}>{primitive.value}</text>;
+  })}</>;
+}
+
 function PointSymbol({ point, selected, onPointerDown }: { point: ElectricalPoint; selected: boolean; onPointerDown: (e: React.PointerEvent) => void }) {
   const colour = pointColour[point.kind];
+  const librarySymbol = point.symbolId ? getSymbolById(point.symbolId) : null;
   return (
-    <g transform={`translate(${point.x * SCALE} ${point.y * SCALE})`} onPointerDown={onPointerDown} style={{ cursor: "grab" }}>
-      {point.kind === "switch" ? (
-        <rect x={-4} y={-4} width={8} height={8} rx={1.5} fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" />
+    <g transform={`translate(${point.x * SCALE} ${point.y * SCALE}) rotate(${-point.rotationDeg}) scale(${point.scale})`} onPointerDown={onPointerDown} style={{ cursor: "grab" }}>
+      {librarySymbol ? <LibrarySymbol primitives={librarySymbol.geometry.primitives} colour={colour} /> : point.kind === "switch" ? (
+        <g><circle r={4} fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" /><line x1={-2} y1={2} x2={2.5} y2={-2.5} stroke={colour} vectorEffect="non-scaling-stroke" /></g>
       ) : point.kind === "lighting" ? (
         <g>
           <circle r={5} fill="none" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" />
@@ -162,10 +205,14 @@ function PointSymbol({ point, selected, onPointerDown }: { point: ElectricalPoin
         </g>
       ) : point.kind === "dedicated" ? (
         <polygon points="0,-6 6,4 -6,4" fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" />
+      ) : point.kind === "socket" ? (
+        <g><circle r={5} fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" /><line x1={-1.7} y1={-1.8} x2={-1.7} y2={1.8} stroke={colour} vectorEffect="non-scaling-stroke" /><line x1={1.7} y1={-1.8} x2={1.7} y2={1.8} stroke={colour} vectorEffect="non-scaling-stroke" /></g>
+      ) : point.kind === "db" ? (
+        <g><rect x={-6} y={-5} width={12} height={10} fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" /><text textAnchor="middle" y={3} fontSize={7} fill={colour}>DB</text></g>
       ) : (
         <circle r={5} fill="var(--color-background)" stroke={colour} strokeWidth={selected ? 2.5 : 1.5} vectorEffect="non-scaling-stroke" />
       )}
-      <title>{`${pointKindLabels[point.kind]} · (${point.x.toFixed(1)}, ${point.y.toFixed(1)}) m`}</title>
+      <title>{`${librarySymbol?.name ?? pointKindLabels[point.kind]} · (${point.x.toFixed(1)}, ${point.y.toFixed(1)}) m${librarySymbol ? " · IEC 60617 candidate, source review required" : ""}`}</title>
     </g>
   );
 }
@@ -182,12 +229,18 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
   const [pan, setPan] = useState<XY>({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState(true);
   const [showPoints, setShowPoints] = useState(true);
+  const [showPhysicalRoutes, setShowPhysicalRoutes] = useState(true);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [exportError, setExportError] = useState("");
+  const [physicalRouteMessage, setPhysicalRouteMessage] = useState("");
   const clipboard = useRef<PlanRoom[]>([]);
   const touches = useRef(new Map<number, XY>());
   const pinch = useRef<number | null>(null);
   const [guides, setGuides] = useState<SnapTarget[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+  const [wireVertices, setWireVertices] = useState<XY[]>([]);
+  const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
+  const [selectedJunctionId, setSelectedJunctionId] = useState<string | null>(null);
   function onChange(next: ElectricalBuilding) {
     if (!beforeDrag.current) { setPast(p => [...p.slice(-49), building]); setFuture([]); }
     latest.current = next;
@@ -242,7 +295,13 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
   const circuitMap = useMemo(() => pointCircuitMap(building), [building]);
   const selectedRoom = plan?.rooms.find(r => r.id === selectedRoomId) ?? null;
   const selectedPoint = plan?.points.find(p => p.id === selectedPointId) ?? null;
+  const selectedRegisteredSymbol = selectedPoint?.symbolId ? registeredSymbol(selectedPoint.symbolId) : null;
   const selectedAssignment = selectedPoint ? circuitMap.get(selectedPoint.id) : undefined;
+  const selectedZone = plan?.routingZones.find(zone => zone.id === selectedZoneId) ?? null;
+  const selectedWire = plan?.cadWires.find(wire => wire.id === selectedWireId) ?? null;
+  const selectedJunction = plan?.cadJunctions.find(junction => junction.id === selectedJunctionId) ?? null;
+  const geometryDiagnostics = useMemo(() => plan ? roomGeometryDiagnostics(plan.rooms, plan.width, plan.depth) : [], [plan]);
+  const routingDiagnostics = useMemo(() => plan ? routeDiagnostics(plan) : [], [plan]);
 
   function onBackgroundDown(e: React.PointerEvent) {
     const start = toPlan(e, svgRef.current);
@@ -251,17 +310,26 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
     if (tool === "pan") { dragRef.current = { mode: "pan", from: start }; return; }
     if (tool === "add-symbol") {
       if (selectedSymbol) {
-        // Place the selected symbol at the clicked location
         placeSymbolAt(selectedSymbol, start.x, start.y);
       }
-      setTool("select");
-      setSelectedSymbol(null);
+      return;
+    }
+    if (tool === "wire" && plan) {
+      const snapped = snapToTerminal(plan, start)?.point ?? { x: snap(start.x), y: snap(start.y) };
+      setWireVertices(vertices => [...vertices, snapped]);
+      return;
+    }
+    if (tool === "junction" && plan) {
+      const junction = createJunction(plan, `junction-${plan.cadJunctions.length + 1}`, { x: snap(start.x), y: snap(start.y) });
+      if (junction) { const withWires = setCadWires(building, activeFloorId, junction.wires); onChange(setCadJunctions(withWires, activeFloorId, [...plan.cadJunctions, junction.junction])); }
       return;
     }
     if (tool !== "room") {
       setSelection([]);
       setSelectedRoomId(null);
       setSelectedPointId(null);
+      setSelectedWireId(null);
+      setSelectedJunctionId(null);
       dragRef.current = { mode: "marquee", start };
       return;
     }
@@ -277,26 +345,29 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
     // For now, add an electrical point with the symbol type
     // In the future, this would place an actual IEC 60617 symbol
     const kindMap: Record<string, PointKind> = {
-      "SW-001": "switch",
+      "CAL-SWITCH-001": "switch",
+      "CAL-PUSHBUTTON-NO-001": "data",
       "SW-002": "switch",
       "SW-003": "switch",
-      "LT-001": "lighting",
+      "CAL-LIGHT-001": "lighting",
       "LT-002": "lighting",
       "LT-003": "lighting",
-      "SOC-001": "socket",
+      "CAL-SOCKET-001": "socket",
       "SOC-002": "socket",
       "SOC-003": "socket",
       "SOC-004": "socket",
       "SOC-005": "socket",
-      "CB-001": "db",
+      "CAL-MCB-001": "data",
+      "CAL-CONDUCTOR-001": "data",
       "CB-003": "db",
       "CB-004": "db",
-      "MT-001": "dedicated",
+      "CAL-TERMINAL-001": "data",
+      "CAL-EARTH-001": "data",
       "MT-002": "dedicated",
       "WH-001": "dedicated",
     };
     const kind = kindMap[symbolId] ?? "dedicated";
-    onChange(addPlanPoint(building, activeFloorId, kind, x, y, null));
+    onChange(addPlanPoint(building, activeFloorId, kind, x, y, null, symbolId));
   }
 
   function onRoomDown(e: React.PointerEvent, room: PlanRoom) {
@@ -339,6 +410,15 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
     dragRef.current = { mode: "point", from: start, point };
   }
 
+  function onWireDown(e: React.PointerEvent, wireId: string) {
+    if (tool !== "select") return;
+    e.stopPropagation(); setSelectedWireId(wireId); setSelectedJunctionId(null); setSelectedPointId(null); setSelectedRoomId(null); setSelection([]);
+  }
+  function onWireVertexDown(e: React.PointerEvent, wireId: string, index: number) {
+    if (tool !== "select") return;
+    e.stopPropagation(); svgRef.current?.setPointerCapture(e.pointerId); beforeDrag.current = building; latest.current = building; dragRef.current = { mode: "wire-vertex", wireId, index };
+  }
+
   function onPointerMove(e: React.PointerEvent) {
     if (touches.current.has(e.pointerId)) touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (touches.current.size === 2) {
@@ -374,6 +454,9 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
       const x = Math.min(Math.max(0, snap(m.x)), plan.width);
       const y = Math.min(Math.max(0, snap(m.y)), plan.depth);
       onChange(updatePlanPoint(building, activeFloorId, { ...drag.point, x, y }));
+    } else if (drag.mode === "wire-vertex") {
+      const wire = plan.cadWires.find(item => item.id === drag.wireId);
+      if (wire) onChange(setCadWires(building, activeFloorId, plan.cadWires.map(item => item.id === wire.id ? moveWireVertex(item, drag.index, { x: snap(m.x), y: snap(m.y) }) : item)));
     }
   }
 
@@ -442,11 +525,17 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
     if (e.key === "Escape") {
       if (beforeDrag.current) publish(beforeDrag.current);
       beforeDrag.current = null; dragRef.current = null; setPreview(null); setGuides([]);
-      setSelection([]); setSelectedRoomId(null); setSelectedPointId(null); setTool("select"); return;
+      setSelection([]); setSelectedRoomId(null); setSelectedPointId(null); setSelectedWireId(null); setSelectedJunctionId(null); setWireVertices([]); setTool("select"); return;
+    }
+    if (tool === "wire" && e.key === "Backspace") { setWireVertices(vertices => vertices.slice(0, -1)); e.preventDefault(); return; }
+    if (tool === "wire" && e.key === "Enter" && plan && wireVertices.length >= 2) {
+      const wire = wireWithTerminalSnaps(plan, nextWireId(plan.cadWires.map(item => item.id)), wireVertices[0], wireVertices.at(-1)!);
+      onChange(setCadWires(building, activeFloorId, [...plan.cadWires, { ...wire, polyline: wireVertices }])); setWireVertices([]); e.preventDefault(); return;
     }
     if (e.key !== "Delete" && e.key !== "Backspace") return;
     if (selection.length) { let next = building; for (const id of selection) next = removePlanRoom(next, activeFloorId, id); onChange(next); setSelection([]); setSelectedRoomId(null); e.preventDefault(); return; }
     if (selectedPointId) { onChange(removePlanPoint(building, activeFloorId, selectedPointId)); setSelectedPointId(null); e.preventDefault(); }
+    else if (selectedWireId && plan) { onChange(setCadWires(building, activeFloorId, plan.cadWires.filter(wire => wire.id !== selectedWireId))); setSelectedWireId(null); e.preventDefault(); }
     else if (selectedRoomId) { onChange(removePlanRoom(building, activeFloorId, selectedRoomId)); setSelectedRoomId(null); e.preventDefault(); }
   }
 
@@ -525,6 +614,8 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
 
   return (
     <div className="space-y-4" onKeyDown={onKeyDown}>
+      {geometryDiagnostics.length > 0 && <p role="alert" className="rounded-lg border border-warning bg-warning-muted p-3 text-sm">Conceptual geometry warning: {geometryDiagnostics.filter(d => d.code === "OVERLAP").length / 2} room overlap(s) and {geometryDiagnostics.filter(d => d.code === "OUT_OF_BOUNDS").length} room(s) outside drawing bounds. Review architecture before routing or issuing drawings.</p>}
+      {routingDiagnostics.length > 0 && <p role="alert" className="rounded-lg border border-warning bg-warning-muted p-3 text-sm">Route validation warning: {routingDiagnostics.length} issue(s). Route length is preliminary and does not establish constructible containment or permitted wall penetrations.</p>}
       <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
         <div className="flex flex-wrap items-end gap-3">
           <label className="text-sm">Floor
@@ -543,8 +634,16 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
           <div className="flex gap-1" role="group" aria-label="Drawing tool">
             <Button size="sm" variant={tool === "select" ? "default" : "outline"} onClick={() => setTool("select")}>Select</Button>
             <Button size="sm" variant={tool === "room" ? "default" : "outline"} onClick={() => setTool("room")}>Draw room</Button>
+            <Button size="sm" variant={tool === "wire" ? "default" : "outline"} onClick={() => { setTool("wire"); setWireVertices([]); }}>Draw wire</Button>
+            <Button size="sm" variant={tool === "junction" ? "default" : "outline"} onClick={() => setTool("junction")}>Junction</Button>
             <Button size="sm" variant={tool === "pan" ? "default" : "outline"} onClick={() => setTool("pan")}>Pan</Button>
           </div>
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Electrical symbol library">
+            {ELECTRICAL_SYMBOL_TOOLS.map(symbol => <Button key={symbol.id} size="sm" variant={tool === "add-symbol" && selectedSymbol === symbol.id ? "default" : "outline"} onClick={() => { setTool("add-symbol"); setSelectedSymbol(symbol.id); }}>{symbol.label}</Button>)}
+            {tool === "add-symbol" && <span className="self-center text-xs text-text-muted">Click the drawing to place {ELECTRICAL_SYMBOL_TOOLS.find(symbol => symbol.id === selectedSymbol)?.label?.toLowerCase() ?? "symbol"}; select another tool to finish.</span>}
+            {tool === "wire" && <span className="self-center text-xs text-text-muted">{wireVertices.length ? `${wireVertices.length} vertex/vertices; Enter commits, Backspace removes last` : "Select a terminal or wire start"}; terminal snaps create logical connectivity.</span>}
+          </div>
+          <p className="w-full text-xs text-text-muted">IEC 60617 candidate library. Current symbols are Caldriva-authored and require source review before standards representation.</p>
           <label className="text-sm">Type
             <select className="ml-2 border border-border bg-surface rounded-lg p-2 text-sm" value={newType} onChange={e => setNewType(e.target.value as RoomType)}>
               {ROOM_TYPES.map(t => <option key={t} value={t}>{roomTypeLabels[t]}</option>)}
@@ -561,6 +660,13 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
           <Button size="sm" variant="outline" onClick={autoArrange} disabled={unplaced.length === 0}>Auto-arrange {unplaced.length} room(s)</Button>
           <Button size="sm" variant="outline" onClick={() => onChange(generateAllPoints(building, activeFloorId))} disabled={!plan || plan.rooms.length === 0}>Generate all points</Button>
           <Button size="sm" variant="outline" onClick={() => onChange(autoRoutePlan(building, activeFloorId))} disabled={!plan || plan.points.length === 0}>Auto-route points</Button>
+          <Button size="sm" variant="outline" onClick={() => { const result = generatePhysicalRoutes(building, activeFloorId); onChange(result.building); setPhysicalRouteMessage(result.generated > 0 ? `${result.generated} proposed physical route(s) generated. ${result.diagnostics.length} item(s) still require review.` : result.diagnostics[0]?.message ?? "NO VERIFIED PHYSICAL ROUTE AVAILABLE"); }} disabled={!plan || plan.points.length === 0}>Generate proposed physical routes</Button>
+          <Button size="sm" variant="outline" onClick={() => {
+            if (!plan) return;
+            const id = `zone-${Date.now()}`;
+            const zone: RoutingZone = { id, label: "Unreviewed ceiling zone", type: "ceiling_zone", containment: "ceiling_void", polyline: [{ x: 0.5, y: 0.5, z: 2.7 }, { x: Math.max(0.5, width - 0.5), y: 0.5, z: 2.7 }], widthM: null, heightM: null, material: null, installationMethod: null, firePerformance: null, availableRoutingZone: null, crossingElement: null, crossingId: null, crossingReviewed: false, reviewStatus: "UNREVIEWED" };
+            setSelectedZoneId(id); onChange(upsertRoutingZone(building, activeFloorId, zone));
+          }} disabled={!plan}>Add routing zone</Button>
           <Button size="sm" variant="outline" onClick={() => onChange(clearPlanPoints(building, activeFloorId))} disabled={!plan || plan.points.length === 0}>Clear points</Button>
           <Button size="sm" variant="outline" onClick={() => onChange(clearPlanRoutes(building, activeFloorId))} disabled={!plan || plan.routes.length === 0}>Clear routes</Button>
           <Button size="sm" variant="outline" onClick={() => onChange(syncLoadsFromPlan(building, activeFloorId))} disabled={!plan || plan.rooms.length === 0}>Sync loads from plan</Button>
@@ -584,6 +690,8 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
           <input type="checkbox" checked={showRoutes} onChange={e => setShowRoutes(e.target.checked)} />
           Show cable routes{plan && plan.routes.length > 0 ? ` (${plan.routes.length})` : ""}
         </label>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showPhysicalRoutes} onChange={e => setShowPhysicalRoutes(e.target.checked)} />Show proposed physical routes</label>
+        {physicalRouteMessage && <p role="status" className="text-sm text-text-muted">{physicalRouteMessage}</p>}
       </div>
 
       <div className="grid lg:grid-cols-[1fr_280px] gap-4">
@@ -684,6 +792,11 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
                 opacity={0.85}
               />
             ))}
+            {plan?.cadWires.map(wire => <g key={wire.id}><polyline points={wire.polyline.map(point => `${point.x * SCALE},${point.y * SCALE}`).join(" ")} fill="none" stroke={wire.id === selectedWireId ? "var(--color-warning)" : "var(--color-primary)"} strokeWidth={wire.id === selectedWireId ? 3 : 1.8} vectorEffect="non-scaling-stroke" pointerEvents="stroke" onPointerDown={e => onWireDown(e, wire.id)}><title>{wire.label || `${wire.state} wire`}</title></polyline>{wire.id === selectedWireId && wire.polyline.map((point, index) => <circle key={index} cx={point.x * SCALE} cy={point.y * SCALE} r={4} fill="var(--color-background)" stroke="var(--color-warning)" strokeWidth={1.5} vectorEffect="non-scaling-stroke" onPointerDown={e => onWireVertexDown(e, wire.id, index)} />)}</g>)}
+            {plan?.cadJunctions.map(junction => <circle key={junction.id} cx={junction.x * SCALE} cy={junction.y * SCALE} r={selectedJunctionId === junction.id ? 5 : 3.5} fill={selectedJunctionId === junction.id ? "var(--color-warning)" : "var(--color-primary)"} onPointerDown={e => { if (tool !== "select") return; e.stopPropagation(); setSelectedJunctionId(junction.id); setSelectedWireId(null); }}><title>{`Junction ${junction.id}: ${junction.wireIds.length} wires`}</title></circle>)}
+            {wireVertices.length > 1 && <polyline points={wireVertices.map(point => `${point.x * SCALE},${point.y * SCALE}`).join(" ")} fill="none" stroke="var(--color-primary)" strokeDasharray="4 3" strokeWidth={1.5} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
+            {plan?.routingZones.map(zone => <polyline key={zone.id} points={zone.polyline.map(point => `${point.x * SCALE},${point.y * SCALE}`).join(" ")} fill="none" stroke={zone.containment === "ceiling_void" ? "#3b82f6" : zone.containment === "concealed_wall" ? "#16a34a" : "#a855f7"} strokeWidth={4} opacity={0.55} vectorEffect="non-scaling-stroke" onPointerDown={e => { e.stopPropagation(); setSelectedZoneId(zone.id); }}><title>{`${zone.label} · ${zone.containment} · z ${zone.polyline[0]?.z.toFixed(2)} m`}</title></polyline>)}
+            {showPhysicalRoutes && plan?.physicalRoutes.flatMap(route => route.segments.map((segment, index) => <line key={`${route.id}-${index}`} x1={segment.start.x * SCALE} y1={segment.start.y * SCALE} x2={segment.end.x * SCALE} y2={segment.end.y * SCALE} stroke="#f97316" strokeWidth={3} vectorEffect="non-scaling-stroke"><title>{`${segment.containment} · ${segment.lengthM.toFixed(2)} m · z ${segment.start.z.toFixed(2)} m`}</title></line>))}
             {showPoints && plan?.points.map(point => (
               <PointSymbol key={point.id} point={point} selected={point.id === selectedPointId} onPointerDown={e => onPointDown(e, point)} />
             ))}
@@ -735,19 +848,37 @@ export function PlanEditor({ building, onChange: publish }: { building: Electric
               </div>
             </div>
           )}
+          {selectedZone && plan && <div className="bg-surface border border-border rounded-xl p-3 space-y-2"><p className="text-xs text-text-muted uppercase tracking-wider">Routing zone</p><Input aria-label="Routing zone label" value={selectedZone.label} onChange={e => onChange(upsertRoutingZone(building, activeFloorId, { ...selectedZone, label: e.target.value }))} className="h-9" /><label className="text-xs block">Containment<select className="mt-1 w-full rounded border border-border bg-background p-2" value={selectedZone.containment} onChange={e => onChange(upsertRoutingZone(building, activeFloorId, { ...selectedZone, containment: e.target.value as RoutingZone["containment"] }))}>{["ceiling_void", "concealed_wall", "surface_conduit", "surface_trunking", "cable_tray", "vertical_riser", "underfloor", "other"].map(value => <option key={value}>{value}</option>)}</select></label><div className="grid grid-cols-2 gap-2">{(["x", "y", "z"] as const).map(axis => <label key={axis} className="text-xs">Start {axis} (m)<Input type="number" step={0.1} value={selectedZone.polyline[0][axis]} onChange={e => { const value = e.target.valueAsNumber; if (!Number.isFinite(value)) return; const polyline = [...selectedZone.polyline]; polyline[0] = { ...polyline[0], [axis]: value }; onChange(upsertRoutingZone(building, activeFloorId, { ...selectedZone, polyline })); }} /></label>)}</div><p className="text-xs text-text-muted">Each zone is a proposed containment centerline. Set dimensions, material, fire performance, crossings, and review status before treating shared occupancy as usable.</p><Button size="sm" variant="outline" onClick={() => { onChange(removeRoutingZone(building, activeFloorId, selectedZone.id)); setSelectedZoneId(null); }}>Remove zone</Button></div>}
+          {selectedWire && plan && <div className="bg-surface border border-border rounded-xl p-3 space-y-2"><p className="text-xs text-text-muted uppercase tracking-wider">Wire properties</p><p className="font-mono text-xs">{selectedWire.id}</p><Input aria-label="Wire label" placeholder="Wire reference" value={selectedWire.label} onChange={e => onChange(setCadWires(building, activeFloorId, plan.cadWires.map(wire => wire.id === selectedWire.id ? { ...wire, label: e.target.value } : wire)))} /><Input aria-label="Wire notes" placeholder="Notes" value={selectedWire.notes} onChange={e => onChange(setCadWires(building, activeFloorId, plan.cadWires.map(wire => wire.id === selectedWire.id ? { ...wire, notes: e.target.value } : wire)))} /><p className="text-xs text-text-muted">Vertices: {selectedWire.polyline.length} · Drawing geometry length, not installed cable length.</p><p className="text-xs text-text-muted">Start: {selectedWire.startTerminal ? `${selectedWire.startTerminal.pointId}:${selectedWire.startTerminal.terminalId}` : "floating"} · End: {selectedWire.endTerminal ? `${selectedWire.endTerminal.pointId}:${selectedWire.endTerminal.terminalId}` : "floating"}</p><Button size="sm" variant="ghost" onClick={() => { onChange(setCadWires(building, activeFloorId, plan.cadWires.filter(wire => wire.id !== selectedWire.id))); setSelectedWireId(null); }}>Delete wire</Button></div>}
+          {selectedJunction && plan && <div className="bg-surface border border-border rounded-xl p-3 space-y-2"><p className="text-xs text-text-muted uppercase tracking-wider">Junction</p><p className="font-mono text-xs">{selectedJunction.id} · {selectedJunction.wireIds.length} wires</p><Input aria-label="Junction note" placeholder="Junction note" value={selectedJunction.note} onChange={e => onChange(setCadJunctions(building, activeFloorId, plan.cadJunctions.map(junction => junction.id === selectedJunction.id ? { ...junction, note: e.target.value } : junction)))} /><Button size="sm" variant="ghost" onClick={() => { const wires = plan.cadWires.map(wire => ({ ...wire, junctionIds: wire.junctionIds.filter(id => id !== selectedJunction.id) })); const next = setCadWires(building, activeFloorId, wires); onChange(setCadJunctions(next, activeFloorId, plan.cadJunctions.filter(junction => junction.id !== selectedJunction.id))); setSelectedJunctionId(null); }}>Delete junction</Button></div>}
 
           {selectedPoint && (
             <div className="bg-surface border border-border rounded-xl p-3 space-y-2">
               <p className="text-xs text-text-muted uppercase tracking-wider">Selected point</p>
               <p className="text-sm">{pointKindLabels[selectedPoint.kind]}</p>
-              <p className="text-xs text-text-muted">Circuit: {selectedAssignment?.circuit ? <span className="font-mono">{selectedAssignment.circuit.code}</span> : pointRequiresCircuit(selectedPoint.kind) ? "not scheduled" : "control device"}</p>
-              <div className="flex gap-2">
+               <p className="text-xs text-text-muted">Circuit: {selectedAssignment?.circuit ? <span className="font-mono">{selectedAssignment.circuit.code}</span> : pointRequiresCircuit(selectedPoint.kind) ? "not scheduled" : "control device"}</p>
+               {selectedRegisteredSymbol && <p className="text-xs text-text-muted">Symbol: {selectedRegisteredSymbol.name} · {selectedRegisteredSymbol.verification} · {selectedRegisteredSymbol.sourceReference}</p>}
+               <label className="text-xs block">Device reference<Input aria-label="Device reference" value={selectedPoint.deviceReference} onChange={e => onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, deviceReference: e.target.value }))} /></label>
+               <label className="text-xs block">Description<Input aria-label="Symbol description" value={selectedPoint.description} onChange={e => onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, description: e.target.value }))} /></label>
+               <div className="flex gap-2">
                 <Input aria-label="Point x" type="number" step={0.1} value={selectedPoint.x} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n)) onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, x: n })); }} className="h-9" />
                 <Input aria-label="Point y" type="number" step={0.1} value={selectedPoint.y} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n)) onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, y: n })); }} className="h-9" />
-              </div>
+               </div>
+               <label className="text-xs block">Elevation (m, required for physical routing)<Input aria-label="Point elevation" type="number" min={0} step={0.1} value={selectedPoint.elevationM ?? ""} onChange={e => { const n = e.target.valueAsNumber; onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, elevationM: Number.isFinite(n) ? n : null })); }} /></label>
+               <div className="grid grid-cols-2 gap-2"><label className="text-xs">Rotation (deg)<Input aria-label="Symbol rotation" type="number" min={0} max={359} value={selectedPoint.rotationDeg} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n)) onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, rotationDeg: ((n % 360) + 360) % 360 })); }} /></label><label className="text-xs">Scale<Input aria-label="Symbol scale" type="number" min={0.1} max={10} step={0.1} value={selectedPoint.scale} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n)) onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, scale: Math.max(0.1, Math.min(10, n)) })); }} /></label></div>
+               <p className="text-xs text-text-muted">Room: {selectedPoint.roomId ? plan?.rooms.find(room => room.id === selectedPoint.roomId)?.label ?? "linked room" : "unassigned"} · Floor: {floor?.name ?? "unknown"}</p>
+               <div className="border-t border-border pt-2 space-y-2"><p className="text-xs text-text-muted uppercase tracking-wider">Catalog</p><Input aria-label="Manufacturer" placeholder="Manufacturer" value={selectedPoint.manufacturer} onChange={e => onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, manufacturer: e.target.value }))} /><Input aria-label="Product reference" placeholder="Product reference" value={selectedPoint.productReference} onChange={e => onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, productReference: e.target.value }))} /><Input aria-label="Datasheet link" placeholder="Datasheet URL" value={selectedPoint.datasheetUrl} onChange={e => onChange(updatePlanPoint(building, activeFloorId, { ...selectedPoint, datasheetUrl: e.target.value }))} /></div>
               <Button size="sm" variant="ghost" onClick={() => { onChange(removePlanPoint(building, activeFloorId, selectedPoint.id)); setSelectedPointId(null); }}>Delete point</Button>
             </div>
           )}
+
+          <details className="bg-surface border border-border rounded-xl p-3">
+            <summary className="cursor-pointer text-xs text-text-muted uppercase tracking-wider">Residential IEC 60617 candidate library</summary>
+            <div className="mt-3">
+              <SymbolPalette showAll symbolIds={RESIDENTIAL_SYMBOL_IDS} onSymbolSelected={symbol => { setSelectedSymbol(symbol.symbolId); setTool("add-symbol"); }} />
+            </div>
+            <p className="mt-2 text-xs text-text-muted">Select a symbol, then click the drawing to place it. These records require source review before they are represented as IEC-verified.</p>
+          </details>
 
           {plan && (
             <div className="bg-surface border border-border rounded-xl p-3 space-y-2">

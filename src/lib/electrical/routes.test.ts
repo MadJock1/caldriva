@@ -42,7 +42,7 @@ describe("route geometry", () => {
   });
 
   it("anchors routes at a db point when present", () => {
-    const plan = { id: "plan-x", floorId: "f", width: 20, depth: 14, rooms: [], points: [{ id: "db1", kind: "db" as const, x: 2, y: 3, roomId: null, note: "" }], routes: [] };
+    const plan = { id: "plan-x", floorId: "f", width: 20, depth: 14, rooms: [], points: [{ id: "db1", kind: "db" as const, x: 2, y: 3, elevationM: null, symbolId: null, deviceReference: "", description: "", rotationDeg: 0, scale: 1, manufacturer: "", productReference: "", datasheetUrl: "", productVerificationStatus: "UNVERIFIED" as const, roomId: null, note: "" }], routes: [], cadWires: [], cadJunctions: [], routingZones: [], physicalRoutes: [] };
     expect(boardAnchor(plan)).toEqual({ x: 2, y: 3 });
   });
 });

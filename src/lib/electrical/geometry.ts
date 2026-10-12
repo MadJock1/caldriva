@@ -1,5 +1,23 @@
 import type { ElectricalPoint, PointKind, Rect, RoomType } from "./model";
 
+export type RoomGeometryDiagnostic = { roomId: string; code: "OUT_OF_BOUNDS" | "OVERLAP"; relatedRoomId?: string };
+
+export function roomGeometryDiagnostics(rooms: Array<{ id: string; rect: Rect }>, width: number, depth: number): RoomGeometryDiagnostic[] {
+  const diagnostics: RoomGeometryDiagnostic[] = [];
+  for (let i = 0; i < rooms.length; i += 1) {
+    const room = rooms[i];
+    const { rect } = room;
+    if (rect.x < 0 || rect.y < 0 || rect.x + rect.w > width || rect.y + rect.h > depth) diagnostics.push({ roomId: room.id, code: "OUT_OF_BOUNDS" });
+    for (let j = i + 1; j < rooms.length; j += 1) {
+      if (rectsOverlap(rect, rooms[j].rect)) {
+        diagnostics.push({ roomId: room.id, relatedRoomId: rooms[j].id, code: "OVERLAP" });
+        diagnostics.push({ roomId: rooms[j].id, relatedRoomId: room.id, code: "OVERLAP" });
+      }
+    }
+  }
+  return diagnostics;
+}
+
 export function rectArea(rect: Rect) {
   return rect.w * rect.h;
 }
@@ -112,7 +130,7 @@ export function generateRoomPoints(
 ): ElectricalPoint[] {
   const points: ElectricalPoint[] = [];
   const make = (kind: PointKind, x: number, y: number) => {
-    points.push({ id: nextId(`${roomId ?? "plan"}-${kind}`), kind, x, y, roomId, note: "" });
+    points.push({ id: nextId(`${roomId ?? "plan"}-${kind}`), kind, x, y, elevationM: null, symbolId: null, deviceReference: "", description: "", rotationDeg: 0, scale: 1, manufacturer: "", productReference: "", datasheetUrl: "", productVerificationStatus: "UNVERIFIED", roomId, note: "" });
   };
 
   const sockets = socketCount(rect, type);

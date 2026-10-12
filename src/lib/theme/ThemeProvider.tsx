@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, startTransition, ReactNode } from "react";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type CanvasBackground = "white" | "black";
@@ -21,24 +21,6 @@ const THEME_STORAGE_KEY = "caldriva-theme";
 const CANVAS_BG_STORAGE_KEY = "caldriva-canvas-bg";
 const SYNC_CANVAS_STORAGE_KEY = "caldriva-sync-canvas";
 
-function getInitialTheme(): ThemeMode {
-  if (typeof window === "undefined") return "system";
-  const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-  return saved ?? "system";
-}
-
-function getInitialCanvasBackground(): CanvasBackground {
-  if (typeof window === "undefined") return "white";
-  const saved = localStorage.getItem(CANVAS_BG_STORAGE_KEY) as CanvasBackground | null;
-  return saved ?? "white";
-}
-
-function getInitialSync(): boolean {
-  if (typeof window === "undefined") return false;
-  const saved = localStorage.getItem(SYNC_CANVAS_STORAGE_KEY);
-  return saved === "true";
-}
-
 function resolveTheme(theme: ThemeMode): "light" | "dark" {
   if (theme === "system") {
     if (typeof window === "undefined") return "dark";
@@ -48,16 +30,12 @@ function resolveTheme(theme: ThemeMode): "light" | "dark" {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const initialTheme = getInitialTheme();
-  const initialCanvasBg = getInitialCanvasBackground();
-  const initialSync = getInitialSync();
-  const initialResolved = resolveTheme(initialTheme);
-
-  const [theme, setThemeState] = useState<ThemeMode>(initialTheme);
-  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(initialResolved);
-  const [canvasBackground, setCanvasBackgroundState] = useState<CanvasBackground>(initialCanvasBg);
-  const [syncCanvasWithTheme, setSyncCanvasWithThemeState] = useState(initialSync);
-  const mountedRef = useRef(false);
+  // Keep the initial client render identical to SSR; browser preferences load after hydration.
+  const [theme, setThemeState] = useState<ThemeMode>("dark");
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");
+  const [canvasBackground, setCanvasBackgroundState] = useState<CanvasBackground>("white");
+  const [syncCanvasWithTheme, setSyncCanvasWithThemeState] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Update resolved theme and apply to DOM
   const updateResolvedTheme = useCallback((newTheme: ThemeMode) => {
@@ -78,9 +56,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [resolvedTheme, canvasBackground]);
 
-  // Mount effect - only runs once
   useEffect(() => {
-    mountedRef.current = true;
+    const savedTheme = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
+    const savedCanvas = localStorage.getItem(CANVAS_BG_STORAGE_KEY) as CanvasBackground | null;
+    startTransition(() => {
+      setThemeState(savedTheme ?? "dark");
+      setCanvasBackgroundState(savedCanvas ?? "white");
+      setSyncCanvasWithThemeState(localStorage.getItem(SYNC_CANVAS_STORAGE_KEY) === "true");
+      setMounted(true);
+    });
   }, []);
 
   // Listen for system theme changes
@@ -98,25 +82,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Apply theme changes to localStorage and DOM
   useEffect(() => {
-    if (!mountedRef.current) return;
-    updateResolvedTheme(theme);
+    if (!mounted) return;
+    startTransition(() => updateResolvedTheme(theme));
     localStorage.setItem(THEME_STORAGE_KEY, theme);
-  }, [theme, updateResolvedTheme]);
+  }, [mounted, theme, updateResolvedTheme]);
 
   // Apply canvas background changes to localStorage and DOM
   useEffect(() => {
-    if (!mountedRef.current) return;
+    if (!mounted) return;
     localStorage.setItem(CANVAS_BG_STORAGE_KEY, canvasBackground);
     if (typeof document !== "undefined") {
       document.documentElement.setAttribute("data-canvas-bg", canvasBackground);
     }
-  }, [canvasBackground]);
+  }, [canvasBackground, mounted]);
 
   // Apply sync preference to localStorage
   useEffect(() => {
-    if (!mountedRef.current) return;
+    if (!mounted) return;
     localStorage.setItem(SYNC_CANVAS_STORAGE_KEY, String(syncCanvasWithTheme));
-  }, [syncCanvasWithTheme]);
+  }, [mounted, syncCanvasWithTheme]);
 
   const setTheme = useCallback((newTheme: ThemeMode) => {
     setThemeState(newTheme);

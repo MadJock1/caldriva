@@ -271,6 +271,16 @@ export const ALL_IC60617_SYMBOLS: IECSymbolMetadata[] = [
   ...MOTORS_SYMBOLS,
 ];
 
+// Building-plan subset; candidates only until their licensed IEC source is reviewed.
+export const RESIDENTIAL_IEC60617_CANDIDATE_SYMBOL_IDS = [
+  "CAL-SOCKET-001",
+  "CAL-LIGHT-001",
+  "CAL-SWITCH-001",
+  "CAL-MCB-001",
+  "CAL-EARTH-001",
+  "CAL-TERMINAL-001",
+] as const;
+
 export function getSymbolsByCategory(category: string) {
   return ALL_IC60617_SYMBOLS.filter((symbol) => symbol.category === category);
 }

@@ -13,13 +13,14 @@ export const buildingSchema = z.object({
   locationConfirmed: z.boolean().default(false),
   locationSource: z.enum(["address", "manual"]).optional(),
   roof: z.array(pointSchema).max(100),
+  roofObstacles: z.array(z.array(pointSchema).min(3).max(100)).max(50).default([]),
   solar: solarInputSchema,
   finance: financeSchema,
   provenance: z.literal("user-supplied; polygon-area algorithmically-estimated"),
 });
 export type Building = z.infer<typeof buildingSchema>;
 export const initialBuilding: Building = {
-  version: 1, name: "Untitled building", address: "", geocodedAddress: null, locationConfirmed: false, roof: [],
+  version: 1, name: "Untitled building", address: "", geocodedAddress: null, locationConfirmed: false, roof: [], roofObstacles: [],
   solar: { latitude: 38.7223, longitude: -9.1393, tilt: 30, azimuth: 180, panels: 10, panelWatts: 430, losses: 14, mounting: "free" },
   finance: { consumption: 4000, selfConsumption: 40, importTariff: 0.25, exportTariff: 0.06, capex: 6500, annualOpex: 100 },
   provenance: "user-supplied; polygon-area algorithmically-estimated",

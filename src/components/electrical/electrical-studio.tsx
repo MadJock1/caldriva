@@ -135,7 +135,7 @@ export function ElectricalStudio({ cloudDraft }: { cloudDraft?: { draft: Electri
       <div className="mt-4">
         {step === "brief" && <BriefPanel onGenerate={generate} />}
         {step === "hierarchy" && <HierarchyEditor building={building} onChange={setBuilding} />}
-        {step === "plan" && <PlanEditor building={building} onChange={setBuilding} />}
+        {step === "plan" && <><div className="mb-3 flex justify-end"><Link className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-background" href="/studio/electrical/plan">Open full-screen plan workspace</Link></div><PlanEditor building={building} onChange={setBuilding} /></>}
         {step === "services" && <ServicesPanel building={building} onChange={setBuilding} />}
         {step === "loads" && (hasBuilding ? <LoadSummary building={building} /> : <p className="text-sm text-text-muted">Generate a building first.</p>)}
         {step === "circuits" && (hasBuilding ? <DistributionView building={building} onChange={setBuilding} /> : <p className="text-sm text-text-muted">Generate a building first.</p>)}

@@ -145,6 +145,16 @@ export const electricalPointSchema = z.object({
   kind: z.enum(POINT_KINDS),
   x: z.number().min(-1000).max(10000),
   y: z.number().min(-1000).max(10000),
+  elevationM: z.number().min(0).max(1000).nullable().default(null),
+  symbolId: z.string().min(1).max(80).nullable().default(null),
+  deviceReference: z.string().max(80).default(""),
+  description: z.string().max(300).default(""),
+  rotationDeg: z.number().min(0).lt(360).default(0),
+  scale: z.number().min(0.1).max(10).default(1),
+  manufacturer: z.string().max(120).default(""),
+  productReference: z.string().max(120).default(""),
+  datasheetUrl: z.string().max(500).default(""),
+  productVerificationStatus: z.enum(["UNVERIFIED", "VERIFIED"]).default("UNVERIFIED"),
   roomId: z.string().max(64).nullable().default(null),
   note: z.string().max(300).default(""),
 });
@@ -182,6 +192,75 @@ export const cableRouteSchema = z.object({
 });
 export type CableRoute = z.infer<typeof cableRouteSchema>;
 
+export const wireTerminalRefSchema = z.object({ pointId: z.string().min(1).max(64), terminalId: z.string().min(1).max(64) });
+export type WireTerminalRef = z.infer<typeof wireTerminalRefSchema>;
+export const cadWireSchema = z.object({
+  id: z.string().min(1).max(64),
+  polyline: z.array(xySchema).min(2).max(256),
+  circuitId: z.string().max(64).nullable().default(null),
+  startTerminal: wireTerminalRefSchema.nullable().default(null),
+  endTerminal: wireTerminalRefSchema.nullable().default(null),
+  label: z.string().max(120).default(""),
+  notes: z.string().max(500).default(""),
+  layer: z.string().max(80).default("ELEC-LOGICAL-CONNECTIONS"),
+  lineType: z.enum(["continuous", "dashed"]).default("continuous"),
+  junctionIds: z.array(z.string().min(1).max(64)).max(64).default([]),
+  state: z.enum(["LOGICAL", "PROPOSED", "REQUIRES_REVIEW", "REVIEWED"]).default("LOGICAL"),
+});
+export type CadWire = z.infer<typeof cadWireSchema>;
+export const cadJunctionSchema = z.object({ id: z.string().min(1).max(64), x: z.number().min(-1000).max(10000), y: z.number().min(-1000).max(10000), wireIds: z.array(z.string().min(1).max(64)).min(2).max(32), note: z.string().max(300).default("") });
+export type CadJunction = z.infer<typeof cadJunctionSchema>;
+
+export const CONTAINMENT_TYPES = ["concealed_wall", "ceiling_void", "surface_conduit", "surface_trunking", "cable_tray", "vertical_riser", "underfloor", "other"] as const;
+export type ContainmentType = (typeof CONTAINMENT_TYPES)[number];
+export const ROUTING_ZONE_TYPES = ["service_corridor", "ceiling_zone", "wall_zone", "shaft", "riser", "underfloor_zone", "surface_zone", "other"] as const;
+export type RoutingZoneType = (typeof ROUTING_ZONE_TYPES)[number];
+export const ROUTE_STATES = ["LOGICAL", "PROPOSED_PHYSICAL", "REVIEWED_PHYSICAL"] as const;
+export type RouteState = (typeof ROUTE_STATES)[number];
+export const CONSTRUCTION_ELEMENTS = ["non_structural_partition", "load_bearing_wall", "fire_rated_partition", "floor_slab", "ceiling", "beam", "column", "unknown"] as const;
+export type ConstructionElement = (typeof CONSTRUCTION_ELEMENTS)[number];
+
+export const xyzSchema = xySchema.extend({ z: z.number().min(-100).max(1000) });
+export type XYZ = z.infer<typeof xyzSchema>;
+export const routingZoneSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().min(1).max(120),
+  type: z.enum(ROUTING_ZONE_TYPES),
+  containment: z.enum(CONTAINMENT_TYPES),
+  polyline: z.array(xyzSchema).min(2).max(64),
+  widthM: z.number().positive().max(10).nullable().default(null),
+  heightM: z.number().positive().max(10).nullable().default(null),
+  material: z.string().max(120).nullable().default(null),
+  installationMethod: z.string().max(200).nullable().default(null),
+  firePerformance: z.string().max(200).nullable().default(null),
+  availableRoutingZone: z.string().max(200).nullable().default(null),
+  crossingElement: z.enum(CONSTRUCTION_ELEMENTS).nullable().default(null),
+  crossingId: z.string().max(64).nullable().default(null),
+  crossingReviewed: z.boolean().default(false),
+  reviewStatus: z.enum(["UNREVIEWED", "REVIEWED"]).default("UNREVIEWED"),
+});
+export type RoutingZone = z.infer<typeof routingZoneSchema>;
+export const physicalRouteSegmentSchema = z.object({
+  zoneId: z.string().min(1).max(64),
+  start: xyzSchema,
+  end: xyzSchema,
+  containment: z.enum(CONTAINMENT_TYPES),
+  lengthM: z.number().nonnegative(),
+  crossingElement: z.enum(CONSTRUCTION_ELEMENTS).nullable().default(null),
+  crossingId: z.string().max(64).nullable().default(null),
+  reviewed: z.boolean().default(false),
+});
+export type PhysicalRouteSegment = z.infer<typeof physicalRouteSegmentSchema>;
+export const physicalRouteSchema = z.object({
+  id: z.string().min(1).max(64),
+  circuitId: z.string().max(64).nullable().default(null),
+  pointId: z.string().max(64).nullable().default(null),
+  state: z.enum(["PROPOSED_PHYSICAL", "REVIEWED_PHYSICAL"]),
+  segments: z.array(physicalRouteSegmentSchema).min(1).max(256),
+  reviewNote: z.string().max(500).default(""),
+});
+export type PhysicalRoute = z.infer<typeof physicalRouteSchema>;
+
 export const floorPlanSchema = z.object({
   id: z.string().min(1).max(64),
   floorId: z.string().min(1).max(64),
@@ -190,6 +269,10 @@ export const floorPlanSchema = z.object({
   rooms: z.array(planRoomSchema).max(500),
   points: z.array(electricalPointSchema).max(5000),
   routes: z.array(cableRouteSchema).max(5000).default([]),
+  cadWires: z.array(cadWireSchema).max(5000).default([]),
+  cadJunctions: z.array(cadJunctionSchema).max(5000).default([]),
+  routingZones: z.array(routingZoneSchema).max(1000).default([]),
+  physicalRoutes: z.array(physicalRouteSchema).max(5000).default([]),
 });
 export type FloorPlan = z.infer<typeof floorPlanSchema>;
 

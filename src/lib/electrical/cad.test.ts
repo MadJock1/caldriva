@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
-import { defaultBrief, generateBuilding, ensurePlan, upsertPlanRoom, generateAllPoints, planForFloor, setPlanRoutes, updatePlanPoint, electricalBuildingSchema } from "./index";
+import { defaultBrief, generateBuilding, ensurePlan, upsertPlanRoom, generateAllPoints, planForFloor, setPlanRoutes, updatePlanPoint, electricalBuildingSchema, roomGeometryDiagnostics } from "./index";
 import { planDxf } from "./cad-export";
+import { routeDiagnostics } from "./routes";
 
 function fixture() {
   let building = generateBuilding(defaultBrief);
@@ -49,4 +50,26 @@ it("exports DXF metre units and flips the room Y coordinates", () => {
   expect(dxf).toContain("8\r\nROOMS\r\n10\r\n1\r\n20\r\n-2");
   expect(dxf).toContain("8\r\nROUTES");
   expect(dxf.endsWith("0\r\nEOF\r\n")).toBe(true);
+});
+
+it("reports overlapping and out-of-bounds conceptual rooms without changing geometry", () => {
+  const diagnostics = roomGeometryDiagnostics([
+    { id: "a", rect: { x: 0, y: 0, w: 4, h: 4 } },
+    { id: "b", rect: { x: 3, y: 0, w: 4, h: 4 } },
+    { id: "c", rect: { x: 8, y: 8, w: 4, h: 4 } },
+  ], 10, 10);
+  expect(diagnostics).toContainEqual({ roomId: "a", relatedRoomId: "b", code: "OVERLAP" });
+  expect(diagnostics).toContainEqual({ roomId: "c", code: "OUT_OF_BOUNDS" });
+});
+
+it("flags non-physical route evidence instead of changing recorded route length", () => {
+  const { building, floorId } = fixture();
+  const plan = planForFloor(building, floorId)!;
+  const diagnostics = routeDiagnostics({ ...plan, routes: [
+    { id: "a", circuitId: null, pointId: null, polyline: [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 99, y: 0 }] },
+    { id: "b", circuitId: null, pointId: null, polyline: [{ x: 99, y: 0 }, { x: 0, y: 0 }] },
+  ] });
+  expect(diagnostics.map(d => d.code)).toContain("ZERO_LENGTH_SEGMENT");
+  expect(diagnostics.map(d => d.code)).toContain("OUT_OF_BOUNDS");
+  expect(diagnostics.map(d => d.code)).toContain("DUPLICATE_SEGMENT");
 });

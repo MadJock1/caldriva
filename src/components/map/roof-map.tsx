@@ -30,18 +30,20 @@ function BuildingMarker({ center, confirmed }: { center: MapPoint; confirmed: bo
 export interface RoofMapProps {
   center: MapPoint;
   roof: MapPoint[];
+  obstacles?: MapPoint[][];
   onClick: (p: MapPoint) => void;
   markerOnly?: boolean;
   locationConfirmed?: boolean;
 }
 
-export default function RoofMap({ center, roof, onClick, markerOnly = false, locationConfirmed = false }: RoofMapProps) {
+export default function RoofMap({ center, roof, obstacles = [], onClick, markerOnly = false, locationConfirmed = false }: RoofMapProps) {
   return (
     <MapContainer center={center} zoom={19} className="h-[430px] w-full rounded-xl z-0" scrollWheelZoom={false}>
       <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maxZoom={19} />
       <MapEvents center={center} onClick={onClick} enabled={true} />
       <BuildingMarker center={center} confirmed={locationConfirmed} />
-      {!markerOnly && roof.length >= 3 && <Polygon positions={roof} pathOptions={{ color: "#08776c", fillColor: "#65DFD0", fillOpacity: 0.3 }} />}
+       {!markerOnly && roof.length >= 3 && <Polygon positions={roof} pathOptions={{ color: "#08776c", fillColor: "#65DFD0", fillOpacity: 0.3 }} />}
+       {!markerOnly && obstacles.map((obstacle, index) => <Polygon key={`obstacle-${index}`} positions={obstacle} pathOptions={{ color: "#F59E0B", fillColor: "#F59E0B", fillOpacity: 0.35 }} />)}
       {!markerOnly && roof.map((point, i) => <CircleMarker key={i} center={point} radius={4} pathOptions={{ color: "#08776c", fillColor: "#65DFD0", fillOpacity: 1 }} />)}
     </MapContainer>
   );

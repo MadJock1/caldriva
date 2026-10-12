@@ -29,7 +29,8 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
   const [savedAssumptions, setSavedAssumptions] = useState<string[]>(initialScenario?.assumptions ?? [...assumptions]);
   const [identity, setIdentity] = useState<CloudIdentity | null>(cloudDraft?.identity ?? null);
   const [step, setStep] = useState<Step>(initialScenario ? "roof" : "address");
-  const [mode, setMode] = useState<"locate" | "roof">("locate");
+  const [mode, setMode] = useState<"locate" | "roof" | "obstacle">("locate");
+  const [pendingObstacle, setPendingObstacle] = useState<MapPoint[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -163,9 +164,9 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
 
     <div className="studio-body">
     <section aria-label="Building map" className="border rounded-xl overflow-hidden bg-surface">
-      <div className="flex flex-wrap items-center gap-2 p-2 border-b"><Button size="sm" variant={mode === "locate" ? "secondary" : "ghost"} onClick={() => { setMode("locate"); setStep("address"); }}>Select location on map</Button><Button size="sm" disabled={!building.locationConfirmed} variant={mode === "roof" ? "secondary" : "ghost"} onClick={() => { setMode("roof"); setStep("roof"); }}>Draw roof</Button><span className="text-sm text-text-muted">{number(geometry.area, 1)} m² · approximate horizontal area</span></div>
-      <div className="studio-map">{validCenter && <RoofMap center={center} roof={building.roof} locationConfirmed={building.locationConfirmed} onClick={p => { if (mode === "roof" && building.locationConfirmed) setBuilding(b => ({ ...b, roof: b.roof.length < 100 ? [...b.roof, p] : b.roof })); else selectPosition(p); }} />}</div>
-      <p className="p-2 text-xs text-text-muted">{mode === "roof" ? "Click roof corners in order; edit or undo vertices below." : "Click your building to place or reposition the marker."} Reference map, not a surveyed roof measurement.</p>
+       <div className="flex flex-wrap items-center gap-2 p-2 border-b"><Button size="sm" variant={mode === "locate" ? "secondary" : "ghost"} onClick={() => { setMode("locate"); setStep("address"); }}>Select location on map</Button><Button size="sm" disabled={!building.locationConfirmed} variant={mode === "roof" ? "secondary" : "ghost"} onClick={() => { setMode("roof"); setStep("roof"); }}>Draw roof</Button><Button size="sm" disabled={!building.locationConfirmed} variant={mode === "obstacle" ? "secondary" : "ghost"} onClick={() => { setMode("obstacle"); setStep("roof"); }}>Draw obstacle</Button><span className="text-sm text-text-muted">{number(geometry.area, 1)} m² · approximate horizontal area</span></div>
+       <div className="studio-map">{validCenter && <RoofMap center={center} roof={building.roof} obstacles={[...building.roofObstacles, ...(pendingObstacle.length >= 3 ? [pendingObstacle] : [])]} locationConfirmed={building.locationConfirmed} onClick={p => { if (mode === "roof" && building.locationConfirmed) setBuilding(b => ({ ...b, roof: b.roof.length < 100 ? [...b.roof, p] : b.roof })); else if (mode === "obstacle" && building.locationConfirmed) setPendingObstacle(points => points.length < 100 ? [...points, p] : points); else selectPosition(p); }} />}</div>
+       <p className="p-2 text-xs text-text-muted">{mode === "roof" ? "Click roof corners in order; edit or undo vertices below." : mode === "obstacle" ? "Click an obstacle boundary, then save the obstacle after at least three vertices." : "Click your building to place or reposition the marker."} Reference map, not a surveyed roof measurement.</p>
     </section>
     <div className="studio-controls">
       <aside className="rounded-xl bg-surface border p-4 space-y-4 self-start">
@@ -227,16 +228,19 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
                 <h2 className="font-semibold text-xl">Roof outline</h2>
                 <div className="flex gap-2">
                   <Button size="sm" variant={mode === "locate" ? "default" : "outline"} aria-pressed={mode === "locate"} onClick={() => setMode("locate")}>Move marker</Button>
-                  <Button size="sm" variant={mode === "roof" ? "default" : "outline"} aria-pressed={mode === "roof"} onClick={() => setMode("roof")}>Draw roof</Button>
+                   <Button size="sm" variant={mode === "roof" ? "default" : "outline"} aria-pressed={mode === "roof"} onClick={() => setMode("roof")}>Draw roof</Button>
+                   <Button size="sm" variant={mode === "obstacle" ? "default" : "outline"} aria-pressed={mode === "obstacle"} onClick={() => setMode("obstacle")}>Draw obstacle</Button>
                 </div>
               </div>
               <p className="text-sm text-text-muted mb-4">{mode === "locate" ? "Click to move the site marker. Existing roof vertices stay in place." : "Click roof corners in order. Edit vertices below or undo the last point."} Map tiles show reference geography, not surveyed roof imagery.</p>
-              <div className="flex flex-wrap gap-4 items-center mt-4">
+               <div className="flex flex-wrap gap-4 items-center mt-4">
                 <strong>Horizontal roof area: {number(geometry.area, 1)} m²</strong>
                 <Button size="sm" variant="outline" disabled={!building.roof.length} onClick={() => setBuilding({ ...building, roof: building.roof.slice(0, -1) })}>Undo vertex</Button>
                 <Button size="sm" variant="outline" onClick={() => setBuilding({ ...building, roof: [] })}>Clear roof</Button>
                 <Button size="sm" onClick={() => setStep("system")} disabled={building.roof.length < 3 || Boolean(geometry.error)}>Continue to system</Button>
-              </div>
+               </div>
+               {mode === "obstacle" && <div className="mt-4 rounded-lg border border-warning bg-warning-muted p-3 text-sm"><p>Pending obstacle vertices: {pendingObstacle.length}</p><div className="mt-2 flex flex-wrap gap-2"><Button size="sm" disabled={pendingObstacle.length < 3} onClick={() => { setBuilding(b => ({ ...b, roofObstacles: [...b.roofObstacles, pendingObstacle] })); setPendingObstacle([]); setMessage("Obstacle added to the layout geometry."); }}>Save obstacle</Button><Button size="sm" variant="outline" disabled={!pendingObstacle.length} onClick={() => setPendingObstacle(points => points.slice(0, -1))}>Undo obstacle vertex</Button><Button size="sm" variant="ghost" disabled={!pendingObstacle.length} onClick={() => setPendingObstacle([])}>Discard pending obstacle</Button></div></div>}
+               {building.roofObstacles.length > 0 && <div className="mt-4 text-sm"><strong>Saved obstacles: {building.roofObstacles.length}</strong><Button className="ml-3" size="sm" variant="outline" onClick={() => setBuilding(b => ({ ...b, roofObstacles: b.roofObstacles.slice(0, -1) }))}>Remove last obstacle</Button></div>}
               {geometry.error && <p role="alert" className="text-error mt-3">{geometry.error}</p>}
               <details className="mt-5"><summary className="cursor-pointer">Keyboard-accessible roof vertices ({building.roof.length})</summary><div className="space-y-3 mt-4">{building.roof.map((point, i) => <div key={i} className="grid grid-cols-2 gap-3">{point.map((value, axis) => <Input key={axis} label={`Vertex ${i + 1} ${axis === 0 ? "latitude" : "longitude"}`} type="number" step="any" value={value} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n) && Math.abs(n) <= (axis === 0 ? 90 : 180)) setBuilding(b => ({ ...b, roof: b.roof.map((p, index) => index === i ? (axis === 0 ? [n, p[1]] : [p[0], n]) : p) })); }} />)}</div>)}<Button variant="outline" disabled={!validCenter || building.roof.length >= 100} onClick={() => setBuilding(b => ({ ...b, roof: [...b.roof, [...center]] }))}>Add vertex at marker</Button></div></details>
             </section>

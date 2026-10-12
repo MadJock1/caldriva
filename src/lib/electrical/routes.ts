@@ -12,6 +12,8 @@ import {
   type XY,
 } from "./model";
 
+export type RouteDiagnostic = { routeId: string; code: "OUT_OF_BOUNDS" | "ZERO_LENGTH_SEGMENT" | "DUPLICATE_SEGMENT"; message: string };
+
 export const RESISTIVITY: Record<CableAssumptions["material"], number> = { copper: 0.0225, aluminium: 0.036 };
 
 export function polylineLength(polyline: XY[]): number {
@@ -24,6 +26,24 @@ export function polylineLength(polyline: XY[]): number {
 
 export function routeLength(route: CableRoute): number {
   return polylineLength(route.polyline);
+}
+
+export function routeDiagnostics(plan: FloorPlan): RouteDiagnostic[] {
+  const diagnostics: RouteDiagnostic[] = [];
+  const segments = new Map<string, string>();
+  for (const route of plan.routes) {
+    for (let index = 1; index < route.polyline.length; index += 1) {
+      const a = route.polyline[index - 1], b = route.polyline[index];
+      if (a.x < 0 || a.x > plan.width || a.y < 0 || a.y > plan.depth || b.x < 0 || b.x > plan.width || b.y < 0 || b.y > plan.depth) diagnostics.push({ routeId: route.id, code: "OUT_OF_BOUNDS", message: "Route contains a vertex outside the drawing boundary." });
+      if (a.x === b.x && a.y === b.y) diagnostics.push({ routeId: route.id, code: "ZERO_LENGTH_SEGMENT", message: "Route contains a zero-length segment." });
+      const forward = `${a.x},${a.y}:${b.x},${b.y}`;
+      const reverse = `${b.x},${b.y}:${a.x},${a.y}`;
+      const existing = segments.get(forward) ?? segments.get(reverse);
+      if (existing && existing !== route.id) diagnostics.push({ routeId: route.id, code: "DUPLICATE_SEGMENT", message: `Route reuses a segment from ${existing}; shared containment is not yet confirmed.` });
+      else segments.set(forward, route.id);
+    }
+  }
+  return diagnostics;
 }
 
 export function boardAnchor(plan: FloorPlan): XY {

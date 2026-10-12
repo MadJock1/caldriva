@@ -4,13 +4,19 @@ import {
   planRoomSchema,
   uniqueId,
   type CableRoute,
+  type CadWire,
+  type CadJunction,
+  type PhysicalRoute,
   type ElectricalBuilding,
   type ElectricalPoint,
   type FloorPlan,
   type PointKind,
   type Room,
   type PlanRoom,
+  routingZoneSchema,
+  type RoutingZone,
 } from "./model";
+import { reanchorWiresForPoint } from "./cad-connectivity";
 import { makeLoad } from "./templates";
 import { countPoints, generateRoomPoints, planPointSummary, rectArea } from "./geometry";
 
@@ -20,7 +26,7 @@ export function planForFloor(building: ElectricalBuilding, floorId: string): Flo
 
 function replacePlan(building: ElectricalBuilding, floorId: string, fn: (plan: FloorPlan) => FloorPlan): ElectricalBuilding {
   const existing = building.plans.find(plan => plan.floorId === floorId);
-  const base: FloorPlan = existing ?? { id: `plan-${floorId}`, floorId, width: 20, depth: 14, rooms: [], points: [], routes: [] };
+  const base: FloorPlan = existing ?? { id: `plan-${floorId}`, floorId, width: 20, depth: 14, rooms: [], points: [], routes: [], cadWires: [], cadJunctions: [], routingZones: [], physicalRoutes: [] };
   const next = fn(base);
   const parsed = floorPlanSchema.parse(next);
   const plans = existing ? building.plans.map(plan => (plan.floorId === floorId ? parsed : plan)) : [...building.plans, parsed];
@@ -39,7 +45,7 @@ function pruneRoutes(plan: FloorPlan): FloorPlan {
 
 export function ensurePlan(building: ElectricalBuilding, floorId: string, width = 20, depth = 14): ElectricalBuilding {
   if (planForFloor(building, floorId)) return building;
-  return replacePlan(building, floorId, () => ({ id: `plan-${floorId}`, floorId, width, depth, rooms: [], points: [], routes: [] }));
+  return replacePlan(building, floorId, () => ({ id: `plan-${floorId}`, floorId, width, depth, rooms: [], points: [], routes: [], cadWires: [], cadJunctions: [], routingZones: [], physicalRoutes: [] }));
 }
 
 export function setPlanSize(building: ElectricalBuilding, floorId: string, width: number, depth: number): ElectricalBuilding {
@@ -68,11 +74,11 @@ export function removePlanRoom(building: ElectricalBuilding, floorId: string, pl
   }));
 }
 
-export function addPlanPoint(building: ElectricalBuilding, floorId: string, kind: PointKind, x: number, y: number, roomId: string | null = null): ElectricalBuilding {
+export function addPlanPoint(building: ElectricalBuilding, floorId: string, kind: PointKind, x: number, y: number, roomId: string | null = null, symbolId: string | null = null): ElectricalBuilding {
   return replacePlan(building, floorId, plan => {
     const taken = takenPointIds(plan);
     const id = uniqueId(`${roomId ?? "plan"}-${kind}`, c => taken.has(c));
-    const point = electricalPointSchema.parse({ id, kind, x, y, roomId, note: "" });
+    const point = electricalPointSchema.parse({ id, kind, x, y, symbolId, roomId, note: "" });
     return { ...plan, points: [...plan.points, point] };
   });
 }
@@ -82,7 +88,9 @@ export function updatePlanPoint(building: ElectricalBuilding, floorId: string, p
     const parsed = electricalPointSchema.parse(point);
     const previous = plan.points.find(p => p.id === parsed.id);
     const moved = previous && (previous.x !== parsed.x || previous.y !== parsed.y);
-    return { ...plan, routes: moved ? [] : plan.routes, points: plan.points.map(p => (p.id === parsed.id ? parsed : p)) };
+    const transformed = previous && (moved || previous.rotationDeg !== parsed.rotationDeg || previous.scale !== parsed.scale);
+    const points = plan.points.map(p => (p.id === parsed.id ? parsed : p));
+    return { ...plan, routes: moved ? [] : plan.routes, points, cadWires: transformed ? reanchorWiresForPoint({ ...plan, points }, parsed.id) : plan.cadWires };
   });
 }
 
@@ -99,8 +107,34 @@ export function setPlanRoutes(building: ElectricalBuilding, floorId: string, rou
   return replacePlan(building, floorId, plan => ({ ...plan, routes }));
 }
 
+export function setCadWires(building: ElectricalBuilding, floorId: string, cadWires: CadWire[]): ElectricalBuilding {
+  return replacePlan(building, floorId, plan => ({ ...plan, cadWires }));
+}
+
+export function setCadJunctions(building: ElectricalBuilding, floorId: string, cadJunctions: CadJunction[]): ElectricalBuilding {
+  return replacePlan(building, floorId, plan => ({ ...plan, cadJunctions }));
+}
+
 export function clearPlanRoutes(building: ElectricalBuilding, floorId: string): ElectricalBuilding {
   return replacePlan(building, floorId, plan => ({ ...plan, routes: [] }));
+}
+
+export function setPhysicalRoutes(building: ElectricalBuilding, floorId: string, physicalRoutes: PhysicalRoute[]): ElectricalBuilding {
+  return replacePlan(building, floorId, plan => ({ ...plan, physicalRoutes }));
+}
+
+export function upsertRoutingZone(building: ElectricalBuilding, floorId: string, zone: RoutingZone): ElectricalBuilding {
+  return replacePlan(building, floorId, plan => {
+    const parsed = routingZoneSchema.parse(zone);
+    const routingZones = plan.routingZones.some(existing => existing.id === parsed.id)
+      ? plan.routingZones.map(existing => existing.id === parsed.id ? parsed : existing)
+      : [...plan.routingZones, parsed];
+    return { ...plan, routingZones, physicalRoutes: [] };
+  });
+}
+
+export function removeRoutingZone(building: ElectricalBuilding, floorId: string, zoneId: string): ElectricalBuilding {
+  return replacePlan(building, floorId, plan => ({ ...plan, routingZones: plan.routingZones.filter(zone => zone.id !== zoneId), physicalRoutes: [] }));
 }
 
 export function generatePointsForPlanRoom(building: ElectricalBuilding, floorId: string, planRoomId: string): ElectricalBuilding {
