@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { serverSupabase } from "@/lib/supabase/server";
 import { electricalBuildingSchema } from "@/lib/electrical/model";
-import { electricalIdentitySchema, electricalSaveSchema, electricalSummarySchema, type ElectricalIdentity, type ElectricalSummary } from "@/lib/electrical/cloud";
+import { electricalDraftSchema, electricalIdentitySchema, electricalSaveSchema, electricalSummarySchema, type ElectricalIdentity, type ElectricalSummary } from "@/lib/electrical/cloud";
 import { revalidatePath } from "next/cache";
 
 type Outcome<T> = { data: T; error?: never } | { error: string; data?: never };
@@ -44,7 +44,7 @@ export async function loadElectricalDesign(id: unknown): Promise<Outcome<{ ident
   if (!z.uuid().safeParse(id).success) return { error: "Invalid design reference." };
   const { data, error } = await session.client.from("electrical_designs").select("id,version,electrical_drafts(draft)").eq("id", id).eq("owner_id", session.userId).maybeSingle();
   if (error || !data) return { error: "Design unavailable or not authorized." };
-  const parsed = electricalIdentitySchema.extend({ electrical_drafts: z.object({ draft: electricalBuildingSchema }) }).safeParse(data);
+  const parsed = electricalIdentitySchema.extend({ electrical_drafts: z.object({ draft: electricalDraftSchema }) }).safeParse(data);
   if (!parsed.success) return { error: "This design draft is incompatible with this application version." };
   return { data: { identity: { id: parsed.data.id, version: parsed.data.version }, draft: parsed.data.electrical_drafts.draft } };
 }

@@ -64,6 +64,18 @@ test("reopened roof snapshot renders a layout and downloads a real PDF", async (
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
 
+test("changing the panel model changes the preliminary layout count", async ({ page }) => {
+  await openConfiguredStudio(page);
+  await page.getByRole("button", { name: "2. Define Roof" }).click();
+  const image = page.getByRole("img", { name: /Preliminary horizontal roof layout with/ });
+  await expect(image).toBeVisible();
+  const count = async () => Number((await image.getAttribute("aria-label"))!.match(/with (\d+) panels/)![1]);
+  const before = await count();
+  expect(before).toBeGreaterThan(0);
+  await page.getByLabel("Panel model").selectOption("example-bifacial-550");
+  expect(await count()).toBeLessThan(before);
+});
+
 test("report API rejects inconsistent snapshots and oversized requests", async ({ request }) => {
   const invalid = await request.post("/api/reports/solar", { data: { ...simulationFixture, result: { ...simulationFixture.result, annualKwh: 8000 } } });
   expect(invalid.status()).toBe(400);

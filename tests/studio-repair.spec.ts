@@ -64,7 +64,7 @@ test("workspace screenshots and theme surfaces", async ({ page }, testInfo) => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
       const box = await page.locator(".leaflet-container").boundingBox();
       expect(box!.y).toBeLessThan(height - 180);
-      expect(await page.locator(".studio-controls aside").evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme === "dark" ? "rgb(18, 25, 36)" : "rgb(255, 255, 255)");
+      expect(await page.locator(".studio-controls aside").filter({ visible: true }).first().evaluate(el => getComputedStyle(el).backgroundColor)).toBe(theme === "dark" ? "rgb(18, 25, 36)" : "rgb(255, 255, 255)");
       await page.screenshot({ path: testInfo.outputPath(`${width}-${theme}.png`), fullPage: true });
     }
   }

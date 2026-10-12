@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { defaultLayout, panelLayout, rectangleFits, type XY } from "./panel-layout";
-import { snapshotSchema } from "./simulation";
+import { defaultLayout, layoutPanels, panelLayout, rectangleFits, type XY } from "./panel-layout";
+import { migratedSnapshotSchema, parseSimulationSnapshot, recomputeLayoutCount, snapshotSchema } from "./simulation";
 import { generateSolarReport } from "./solar-report";
-import { simulationFixture as fixture } from "../../tests/fixtures";
+import { panelModelById } from "./solar-panel-catalog";
+import { simulationFixture as fixture, legacySimulationFixture } from "../../tests/fixtures";
 
 describe("simulation snapshot validation", () => {
   it("rejects mismatched capacity and monthly energy", () => {
@@ -15,6 +16,31 @@ describe("simulation snapshot validation", () => {
   it("rejects bad dates and invalid geometry", () => {
     expect(snapshotSchema.safeParse({ ...fixture, result: { ...fixture.result, calculatedAt: "not-a-date" } }).success).toBe(false);
     expect(snapshotSchema.safeParse({ ...fixture, building: { ...fixture.building, roof: [[0, 0], [.001, .001], [0, .001], [.001, 0]] } }).success).toBe(false);
+  });
+});
+describe("solar snapshot version migration", () => {
+  it("migrates a legacy version 1 snapshot to version 2 with a manual declared panel", () => {
+    const parsed = migratedSnapshotSchema.safeParse(legacySimulationFixture);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.schemaVersion).toBe(2);
+    expect(parsed.data.panel.panelModelId).toBe("legacy-declared");
+    expect(parsed.data.panel.countSource).toBe("manual");
+    expect(parsed.data.panel.watts).toBe(fixture.building.solar.panelWatts);
+    expect(parsed.data.panel.layoutCount).toBe(fixture.building.solar.panels);
+    expect(parsed.data.building.solar.panels).toBe(fixture.building.solar.panels);
+  });
+  it("round-trips a version 2 snapshot unchanged", () => {
+    expect(parseSimulationSnapshot(fixture)).toEqual(fixture);
+  });
+  it("recomputes the layout panel count from the stored inputs", () => {
+    expect(recomputeLayoutCount(fixture)).toBeGreaterThan(0);
+  });
+  it("changes the layout count when the panel model dimensions change", () => {
+    const request = { orientation: "portrait" as const, setback: fixture.layout.setback, gap: fixture.layout.gap };
+    const small = layoutPanels(fixture.building.roof, panelModelById("example-mono-430")!, request, fixture.building.solar.azimuth).count;
+    const large = layoutPanels(fixture.building.roof, panelModelById("example-bifacial-550")!, request, fixture.building.solar.azimuth).count;
+    expect(small).toBeGreaterThan(large);
   });
 });
 describe("preliminary horizontal layout", () => {

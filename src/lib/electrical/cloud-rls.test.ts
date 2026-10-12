@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -23,7 +23,8 @@ beforeAll(async () => {
     grant usage on schema auth, public to anon, authenticated;
     grant execute on function auth.uid() to anon, authenticated;`);
   await db.query("insert into auth.users(id) values ($1), ($2)", [alice, bob]);
-  await db.exec(await readFile(resolve(MIGRATIONS_DIR, "202610100005_electrical_designs.sql"), "utf8"));
+  const migrations = (await readdir(MIGRATIONS_DIR)).filter((file) => file.endsWith(".sql")).sort();
+  for (const file of migrations) await db.exec(await readFile(resolve(MIGRATIONS_DIR, file), "utf8"));
 }, 30000);
 afterAll(async () => { await db.close(); });
 
@@ -59,7 +60,7 @@ describe("electrical design owner-only policies", () => {
 
   it("rejects invalid drafts before writing", async () => {
     await asUser(alice);
-    await expect(db.query("select * from public.save_electrical_design(null, null, $1::jsonb)", [JSON.stringify({ ...initialElectricalBuilding, version: 2 })])).rejects.toThrow(/Invalid draft/);
+    await expect(db.query("select * from public.save_electrical_design(null, null, $1::jsonb)", [JSON.stringify({ ...initialElectricalBuilding, version: 3 })])).rejects.toThrow(/Invalid draft/);
     await expect(db.query("select * from public.save_electrical_design(null, null, $1::jsonb)", [JSON.stringify({ ...initialElectricalBuilding, name: "  " })])).rejects.toThrow(/Invalid draft/);
   });
 

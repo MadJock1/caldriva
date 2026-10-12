@@ -11,8 +11,9 @@ import type { CloudIdentity } from "@/lib/cloud-building";
 import { ScenarioControls } from "./scenario-controls";
 import { PanelLayoutView } from "./panel-layout-view";
 import { Logo } from "@/components/brand/logo";
-import { defaultLayout, type LayoutSettings } from "@/lib/panel-layout";
-import { snapshotSchema, assumptions, type SimulationSnapshot } from "@/lib/simulation";
+import { defaultLayout, layoutPanels, type LayoutSettings } from "@/lib/panel-layout";
+import { panelModelById, defaultPanelModelId, PANEL_CATALOGUE_DISCLAIMER, type PanelModel } from "@/lib/solar-panel-catalog";
+import { migratedSnapshotSchema, assumptions, panelModelFromSelection, type SimulationSnapshot } from "@/lib/simulation";
 import { AddressAutocomplete } from "./address-autocomplete";
 import { geocodedAddressSchema, type GeocodedAddress } from "@/lib/geocoding";
 
@@ -24,8 +25,13 @@ const number = (n: number, decimals = 0) => n.toLocaleString("en-GB", { maximumF
 type Step = "address" | "confirm" | "roof" | "system" | "finance" | "results";
 
 export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { draft: Building; identity: CloudIdentity }; initialScenario?: SimulationSnapshot }) {
+  const initialModel: PanelModel = initialScenario?.panel
+    ? panelModelById(initialScenario.panel.panelModelId) ?? { id: initialScenario.panel.panelModelId, label: initialScenario.panel.label, watts: initialScenario.panel.watts, widthM: initialScenario.panel.widthM, lengthM: initialScenario.panel.lengthM, verified: initialScenario.panel.verified, provenance: "Restored snapshot panel record." }
+    : panelModelById(defaultPanelModelId)!;
   const [building, setBuilding] = useState<Building>(initialScenario?.building ?? cloudDraft?.draft ?? initialBuilding);
-  const [layout, setLayout] = useState<LayoutSettings>(initialScenario?.layout ?? defaultLayout);
+  const [layout, setLayout] = useState<LayoutSettings>(initialScenario?.layout ?? { ...defaultLayout, width: initialModel.widthM, length: initialModel.lengthM });
+  const [panelModel, setPanelModel] = useState<PanelModel>(initialModel);
+  const [countSource, setCountSource] = useState<"layout" | "manual">(initialScenario?.panel?.countSource ?? "layout");
   const [savedAssumptions, setSavedAssumptions] = useState<string[]>(initialScenario?.assumptions ?? [...assumptions]);
   const [identity, setIdentity] = useState<CloudIdentity | null>(cloudDraft?.identity ?? null);
   const [step, setStep] = useState<Step>(initialScenario ? "roof" : "address");
@@ -38,12 +44,29 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
   const center = useMemo<MapPoint>(() => [building.solar.latitude, building.solar.longitude], [building.solar.latitude, building.solar.longitude]);
   const validCenter = Number.isFinite(center[0]) && Number.isFinite(center[1]) && Math.abs(center[0]) <= 90 && Math.abs(center[1]) <= 180;
   const geometry = useMemo(() => { try { return { area: horizontalRoofArea(building.roof), error: "" }; } catch (e) { return { area: 0, error: e instanceof Error ? e.message : "Invalid roof" }; } }, [building.roof]);
-  const current = snapshot && JSON.stringify(snapshot.input) === JSON.stringify(building.solar);
+  const layoutResult = useMemo(() => {
+    try { return { result: layoutPanels(building.roof, panelModel, { orientation: layout.orientation, setback: layout.setback, gap: layout.gap }, building.solar.azimuth, building.roofObstacles), error: "" }; }
+    catch (e) { return { result: null, error: e instanceof Error ? e.message : "Invalid layout inputs" }; }
+  }, [building.roof, building.roofObstacles, building.solar.azimuth, panelModel, layout.orientation, layout.setback, layout.gap]);
+  const layoutCount = layoutResult.result?.count ?? 0;
+  const layoutKwp = layoutCount * panelModel.watts / 1000;
+  const effectiveSolar: SolarInput = countSource === "layout" ? { ...building.solar, panels: layoutCount, panelWatts: panelModel.watts } : building.solar;
+  const effectiveBuilding: Building = { ...building, solar: effectiveSolar };
+  const current = snapshot && JSON.stringify(snapshot.input) === JSON.stringify(effectiveSolar);
   const result = current ? snapshot.result : null;
-  const report = result ? snapshotSchema.safeParse({ schemaVersion: 1, name: initialScenario?.name ?? "Solar scenario", building, layout, result, assumptions: savedAssumptions }) : null;
+  const report = result ? migratedSnapshotSchema.safeParse({ schemaVersion: 2, name: initialScenario?.name ?? "Solar scenario", building: effectiveBuilding, layout, panel: { panelModelId: panelModel.id, label: panelModel.label, widthM: panelModel.widthM, lengthM: panelModel.lengthM, watts: panelModel.watts, verified: panelModel.verified, layoutCount, countSource }, result, assumptions: savedAssumptions }) : null;
+
+  const choosePanel = useCallback((id: string) => {
+    const model = panelModelById(id);
+    if (!model) return;
+    setPanelModel(model);
+    setLayout(l => ({ ...l, width: model.widthM, length: model.lengthM }));
+    setMessage(`Panel model set to ${model.label}.${model.verified ? "" : " This model is unverified; confirm its datasheet before design or procurement."}`);
+  }, []);
 
   function restoreScenario(s: SimulationSnapshot) {
     setBuilding(s.building); setLayout(s.layout); setSavedAssumptions(s.assumptions);
+    setPanelModel(panelModelFromSelection(s.panel)); setCountSource(s.panel.countSource);
     setSnapshot({ input: s.building.solar, result: s.result });
     setIdentity(null);
     setStep("roof");
@@ -90,7 +113,7 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
 
   async function simulate() {
     setError(""); setMessage("");
-    const parsed = solarInputSchema.safeParse(building.solar);
+    const parsed = solarInputSchema.safeParse(effectiveSolar);
     if (!parsed.success) { setError("Complete all solar inputs within the displayed limits."); return; }
     setBusy(true); setSnapshot(null);
     try {
@@ -244,18 +267,17 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
               {geometry.error && <p role="alert" className="text-error mt-3">{geometry.error}</p>}
               <details className="mt-5"><summary className="cursor-pointer">Keyboard-accessible roof vertices ({building.roof.length})</summary><div className="space-y-3 mt-4">{building.roof.map((point, i) => <div key={i} className="grid grid-cols-2 gap-3">{point.map((value, axis) => <Input key={axis} label={`Vertex ${i + 1} ${axis === 0 ? "latitude" : "longitude"}`} type="number" step="any" value={value} onChange={e => { const n = e.target.valueAsNumber; if (Number.isFinite(n) && Math.abs(n) <= (axis === 0 ? 90 : 180)) setBuilding(b => ({ ...b, roof: b.roof.map((p, index) => index === i ? (axis === 0 ? [n, p[1]] : [p[0], n]) : p) })); }} />)}</div>)}<Button variant="outline" disabled={!validCenter || building.roof.length >= 100} onClick={() => setBuilding(b => ({ ...b, roof: [...b.roof, [...center]] }))}>Add vertex at marker</Button></div></details>
             </section>
-            <PanelLayoutView building={building} settings={layout} onChange={setLayout} onUseCount={count => setSolar("panels", count)} />
+            <PanelLayoutView building={building} panelModel={panelModel} onPanelModel={choosePanel} settings={layout} onChange={setLayout} onUseCount={() => setCountSource("layout")} countSource={countSource} />
           </>
         )}
 
         {step === "system" && (
           <section className="bg-surface rounded-xl border p-5">
             <h2 className="font-semibold text-xl mb-3">04 / Solar system</h2>
-            <p className="text-sm text-text-muted mb-6">Panel count is manually supplied unless you explicitly choose the preliminary layout count. Structural suitability, obstacles and sloped-plane fit require professional review.</p>
+            <p className="text-sm text-text-muted mb-6">Panel count follows the roof layout by default, or a manual override you enter here. Panel nominal power comes from the selected catalogue model. Structural suitability, obstacles and sloped-plane fit require professional review.</p>
             <fieldset disabled={busy} className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+              <Input label="Panel count" type="number" required min={1} max={10000} step={1} value={countSource === "layout" ? layoutCount : (Number.isFinite(building.solar.panels) ? building.solar.panels : "")} onChange={e => { setCountSource("manual"); setSolar("panels", e.target.valueAsNumber); }} />
               {([
-                ["panels", "Panel count", 1, 10000, 1],
-                ["panelWatts", "Panel nominal power (Wp)", 10, 1000, 1],
                 ["tilt", "Confirmed roof tilt (°)", 0, 90, 1],
                 ["azimuth", "Compass azimuth (°; south = 180)", 0, 360, 1],
                 ["losses", "System losses (%)", 0, 50, 0.1],
@@ -264,6 +286,12 @@ export function SolarStudio({ cloudDraft, initialScenario }: { cloudDraft?: { dr
               ))}
               <label className="text-sm font-medium">Mounting<select className="block w-full mt-2 border rounded-lg p-2.5" value={building.solar.mounting} onChange={e => setSolar("mounting", e.target.value)}><option value="free">Ventilated / free-standing</option><option value="building">Building-integrated</option></select></label>
             </fieldset>
+            <div className="mt-5 rounded-lg border p-4 text-sm">
+              <p><strong>Selected panel model:</strong> {panelModel.label} · {panelModel.watts} Wp · {panelModel.widthM} × {panelModel.lengthM} m · {panelModel.verified ? "verified" : "unverified"}</p>
+              <p className="mt-2 text-text-muted">{countSource === "layout" ? `Panel count and capacity follow the roof layout: ${layoutCount} panels, ${layoutKwp.toFixed(2)} kWp.` : "Manual panel count override is active; the roof layout is not used for the estimate."}</p>
+              <button type="button" className="mt-2 underline disabled:opacity-50" disabled={countSource === "layout" || layoutCount < 1} onClick={() => setCountSource("layout")}>Use layout count</button>
+            </div>
+            {!panelModel.verified && <p role="alert" className="mt-4 rounded-lg border border-warning bg-warning-muted p-3 text-sm">{PANEL_CATALOGUE_DISCLAIMER}</p>}
             <div className="flex gap-3 mt-6">
               <Button loading={busy} onClick={simulate}>Estimate with PVGIS</Button>
               <Button variant="outline" onClick={() => setStep("roof")}>Back to roof</Button>

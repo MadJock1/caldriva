@@ -2,7 +2,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { serverSupabase } from "@/lib/supabase/server";
-import { snapshotFromRow, snapshotSchema, assumptions, type SavedSimulation } from "@/lib/simulation";
+import { snapshotFromRow, snapshotSchema, assumptions, recomputeLayoutCount, type SavedSimulation } from "@/lib/simulation";
 import { cloudIdentitySchema } from "@/lib/cloud-building";
 import { calculateSolar } from "@/lib/pvgis";
 
@@ -23,10 +23,14 @@ export async function saveSimulation(payload: unknown): Promise<Outcome<SavedSim
   const owner = await auth.client.from("buildings").select("id,version").eq("id", identity.id).eq("owner_id", auth.userId).maybeSingle();
   if (owner.error || !owner.data) return { error: "Building unavailable or not authorized." };
   if (owner.data.version !== identity.version) return { error: "This building changed elsewhere. Reopen the current building before saving a scenario." };
-  // Never trust browser-supplied energy results for a cloud save. Recalculate from inputs.
+  // Never trust browser-supplied energy or layout results for a cloud save. Recalculate from inputs.
   let verified;
-  try { verified = snapshotSchema.parse({ ...snapshot, assumptions: [...assumptions], result: await calculateSolar(snapshot.building.solar) }); }
-  catch { return { error: "PVGIS could not refresh this scenario. No simulation was saved. Local saving is still available." }; }
+  try {
+    const layoutCount = recomputeLayoutCount(snapshot);
+    const solar = snapshot.panel.countSource === "layout" ? { ...snapshot.building.solar, panels: layoutCount, panelWatts: snapshot.panel.watts } : snapshot.building.solar;
+    const building = { ...snapshot.building, solar };
+    verified = snapshotSchema.parse({ ...snapshot, building, panel: { ...snapshot.panel, layoutCount }, assumptions: [...assumptions], result: await calculateSolar(solar) });
+  } catch { return { error: "PVGIS could not refresh this scenario. No simulation was saved. Local saving is still available." }; }
   const { data: id, error } = await auth.client.rpc("save_solar_simulation", { p_building_id: identity.id, p_building_version: identity.version, p_snapshot: verified });
   if (error) return { error: error.code === "40001" ? "The building changed while calculating. Reopen it before saving." : "Could not save the simulation. Check the simulation migration and account permissions." };
   revalidatePath("/dashboard/simulations");

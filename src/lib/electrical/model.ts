@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { complianceContextSchema } from "../engineering/compliance/context";
+import { distributionSystemSchema } from "./distribution-system";
 
 export const ENGINE_VERSION = "electrical-0.1.0";
 
@@ -361,7 +362,7 @@ export const serviceSchema = z.object({
 export type ServiceConfig = z.infer<typeof serviceSchema>;
 
 export const electricalBuildingSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   name: z.string().min(1).max(150),
   country: z.string().min(1).max(80),
   jurisdiction: z.string().min(1).max(120),
@@ -372,17 +373,29 @@ export const electricalBuildingSchema = z.object({
   service: serviceSchema,
   cableAssumptions: cableAssumptionsSchema.default(defaultCableAssumptions),
   compliance: complianceContextSchema.optional(),
+  distribution: distributionSystemSchema.nullable().default(null),
   reviewStatus: z.enum(REVIEW_STATUSES).default("DRAFT"),
   assumptions: z.array(z.string().max(600)).max(40),
   provenance: z.string().min(1).max(300),
 });
 export type ElectricalBuilding = z.infer<typeof electricalBuildingSchema>;
 
+export function migrateElectricalBuildingDraft(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+  const draft = raw as Record<string, unknown>;
+  if (draft.version === 1) return { ...draft, version: 2, distribution: null };
+  return raw;
+}
+
+export function parseElectricalBuildingDraft(raw: unknown): ElectricalBuilding {
+  return electricalBuildingSchema.parse(migrateElectricalBuildingDraft(raw));
+}
+
 export const apartmentTemplateIds = ["T0", "T1", "T2", "T3", "T4", "T5", "CUSTOM"] as const;
 export type ApartmentTemplateId = (typeof apartmentTemplateIds)[number];
 
 export const initialElectricalBuilding: ElectricalBuilding = {
-  version: 1,
+  version: 2,
   name: "Untitled building",
   country: "Portugal",
   jurisdiction: "Portugal - low-voltage installations (RTIEBT scope)",
@@ -392,6 +405,7 @@ export const initialElectricalBuilding: ElectricalBuilding = {
   commonLoads: [],
   service: { voltageV: 400, phases: 3, supplyType: "three", apartmentDiversity: 1, buildingDiversity: 1, designMargin: 0.1 },
   cableAssumptions: defaultCableAssumptions,
+  distribution: null,
   reviewStatus: "DRAFT",
   assumptions: [
     "Preliminary automatic electrical model; not engineer-reviewed, certified or approved.",

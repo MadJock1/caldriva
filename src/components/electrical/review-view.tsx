@@ -1,6 +1,6 @@
 "use client";
 import { Button } from "@/components/ui/button";
-import { categoryLabels, designReview, REVIEW_STATUSES, type CheckStatus, type ElectricalBuilding, type ReviewStatus } from "@/lib/electrical";
+import { categoryLabels, designReview, statusLabels, REVIEW_STATUSES, type CheckStatus, type ElectricalBuilding, type ReviewStatus } from "@/lib/electrical";
 
 const statusStyles: Record<CheckStatus, string> = {
   pass: "text-success border-success/40 bg-success-muted",
@@ -8,8 +8,6 @@ const statusStyles: Record<CheckStatus, string> = {
   blocked: "text-error border-error/40 bg-error-muted",
   manual: "text-text-secondary border-border bg-surface-elevated",
 };
-
-const statusLabel: Record<CheckStatus, string> = { pass: "Pass", warn: "Check", blocked: "Blocked", manual: "Manual" };
 
 export function ReviewView({ building, onStatus }: { building: ElectricalBuilding; onStatus: (status: ReviewStatus) => void }) {
   const review = designReview(building);
@@ -34,7 +32,7 @@ export function ReviewView({ building, onStatus }: { building: ElectricalBuildin
           <ul className="space-y-3">
             {review.checks.filter(c => c.category === category).map(check => (
               <li key={check.id} className="flex flex-wrap items-start gap-3">
-                <span className={`text-xs font-medium border rounded-full px-2.5 py-0.5 ${statusStyles[check.status]}`}>{statusLabel[check.status]}</span>
+                <span className={`text-xs font-medium border rounded-full px-2.5 py-0.5 ${statusStyles[check.status]}`}>{statusLabels[check.status]}</span>
                 <div className="min-w-0">
                   <p className="font-medium">{check.title}</p>
                   <p className="text-sm text-text-muted">{check.detail}</p>

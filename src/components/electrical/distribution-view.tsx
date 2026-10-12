@@ -1,7 +1,14 @@
 "use client";
-import { generateDistribution, circuitTypeLabels, pointCoverageStats, schedulePoints, uncoveredPoints, voltageDropReport, csaFor, CIRCUIT_TYPES, type Board, type ElectricalBuilding, type Feeder } from "@/lib/electrical";
+import { buildDesignIssues, diagramTargetId, generateDistribution, categoryLabels, circuitTypeLabels, linkedIssueStats, pointCoverageStats, schedulePoints, scheduleSizing, statusLabels, uncoveredPoints, voltageDropReport, csaFor, CIRCUIT_TYPES, type Board, type CheckStatus, type ElectricalBuilding, type Feeder } from "@/lib/electrical";
 
 const kva = (va: number) => `${(va / 1000).toFixed(1)} kVA`;
+
+const statusStyles: Record<CheckStatus, string> = {
+  pass: "text-success border-success/40 bg-success-muted",
+  warn: "text-warning border-warning/40 bg-warning-muted",
+  blocked: "text-error border-error/40 bg-error-muted",
+  manual: "text-text-secondary border-border bg-surface-elevated",
+};
 
 type Placed = { board: Board; x: number; y: number };
 
@@ -84,7 +91,7 @@ function Riser({ building }: { building: ElectricalBuilding }) {
         const y = 40 + i * rowH;
         const apts = apartments.find(a => a.floor.id === floor.id)?.count ?? 0;
         return (
-          <g key={floor.id}>
+          <g key={floor.id} id={`floor-${floor.id}`}>
             <line x1={riserX} y1={y} x2={riserX + 60} y2={y} stroke="var(--color-border-strong)" strokeWidth={1.5} />
             <circle cx={riserX} cy={y} r={4} fill="var(--color-primary)" />
             <rect x={riserX + 60} y={y - 15} width={110} height={30} rx={6} fill="var(--color-surface)" stroke="var(--color-border)" />
@@ -103,6 +110,9 @@ export function DistributionView({ building, onChange }: { building: ElectricalB
   const coverage = pointCoverageStats(building, distribution);
   const gaps = uncoveredPoints(building, distribution);
   const drop = voltageDropReport(building, distribution);
+  const sizing = scheduleSizing(building, distribution);
+  const issues = buildDesignIssues(building, distribution);
+  const issueStats = linkedIssueStats(issues);
   const hasPoints = building.plans.some(p => p.points.length > 0);
   const assumptions = building.cableAssumptions;
   const setAssumptions = (next: typeof assumptions) => onChange?.({ ...building, cableAssumptions: next });
@@ -124,6 +134,38 @@ export function DistributionView({ building, onChange }: { building: ElectricalB
         <h3 className="font-semibold text-lg mb-2">Riser diagram</h3>
         <p className="text-sm text-text-muted mb-4">Vertical distribution from the main board through floor boards. Cable sizes and protective devices are not selected.</p>
         <div className="overflow-auto"><Riser building={building} /></div>
+      </section>
+
+      <section className="bg-surface border border-border rounded-xl p-5">
+        <h3 className="font-semibold text-lg mb-2">Issues linked to the distribution</h3>
+        <p className="text-sm text-text-muted mb-4">
+          Design-review and standards-screening findings, each shown with the single-line, riser or floor element it concerns.
+          {" "}{issueStats.linked} linked to a board, circuit or floor · {issueStats.projectScope} project-scope. Links jump to the matching
+          board entry further down. A link identifies where an issue sits; it is not an automatic fix.
+        </p>
+        <ul className="space-y-3">
+          {issues.map(issue => (
+            <li key={issue.id} className="border border-border rounded-lg p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`text-xs font-medium border rounded-full px-2.5 py-0.5 ${statusStyles[issue.level]}`}>{statusLabels[issue.level]}</span>
+                <strong>{issue.title}</strong>
+                <span className="text-xs text-text-muted">{issue.source === "design" ? "Design review" : "Standards screening"} · {issue.category}</span>
+              </div>
+              <p className="text-text-muted mt-1">{issue.detail}</p>
+              {issue.targets.length > 0 ? (
+                <p className="mt-2 flex flex-wrap gap-2">
+                  {issue.targets.map(target => (
+                    <a key={`${target.kind}-${target.id}`} href={`#${diagramTargetId(target)}`} className="text-xs font-mono border border-border rounded-full px-2.5 py-0.5 hover:bg-background" title={`Jump to ${target.kind}`}>
+                      {target.kind === "circuit" ? "▸ " : "▪ "}{target.label}
+                    </a>
+                  ))}
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-text-muted">Project scope — no single distribution element applies.</p>
+              )}
+            </li>
+          ))}
+        </ul>
       </section>
 
       {coverage.total > 0 && (
@@ -231,7 +273,7 @@ export function DistributionView({ building, onChange }: { building: ElectricalB
         <h3 className="font-semibold text-lg mb-3">Board schedule</h3>
         <div className="space-y-4">
           {distribution.boards.map(board => (
-            <div key={board.id} className="border border-border rounded-lg">
+            <div key={board.id} id={`board-${board.id}`} className="border border-border rounded-lg">
               <div className="flex flex-wrap justify-between gap-2 p-3 border-b border-border">
                 <strong>{board.name}</strong>
                 <span className="text-sm text-text-muted">{board.kind} · {kva(board.totals.demandVA)} · {board.currentA.toFixed(0)} A</span>
@@ -244,7 +286,7 @@ export function DistributionView({ building, onChange }: { building: ElectricalB
                     <thead><tr className="text-left text-text-muted"><th className="p-2">Ref</th><th className="p-2">Function</th><th className="p-2">Type</th><th className="p-2">Phase</th><th className="p-2">Demand VA</th><th className="p-2">Current A</th></tr></thead>
                     <tbody>
                       {board.circuits.map(circuit => (
-                        <tr key={circuit.id} className="border-t border-border/60">
+                        <tr key={circuit.id} id={`circuit-${circuit.id}`} className="border-t border-border/60">
                           <td className="p-2 font-mono">{circuit.code}</td>
                           <td className="p-2">{circuit.function}</td>
                           <td className="p-2">{circuitTypeLabels[circuit.type]}</td>
@@ -261,6 +303,87 @@ export function DistributionView({ building, onChange }: { building: ElectricalB
           ))}
         </div>
       </section>
+
+      {hasPoints && (
+        <section className="bg-surface border border-border rounded-xl p-5">
+          <h3 className="font-semibold text-lg mb-2">Circuit sizing schedule</h3>
+          <p className="text-sm text-text-muted mb-2">
+            Preliminary device and cable selection from the circuit design currents and the worst routed branch length, using the assumed
+            installation method &ldquo;{sizing.installMethodLabel}&rdquo; and {sizing.material} conductors. Findings are aggregated per board: each
+            distinct finding is listed once with the number of affected circuits, followed by a per-circuit detail.
+          </p>
+          <p className="text-xs text-text-muted mb-4">{sizing.disclaimer}</p>
+          {sizing.sizedCircuitCount === 0 ? (
+            <p className="text-sm text-text-muted">No routed circuits to size yet. Open the Plan step, route the points, then return here.</p>
+          ) : (
+            <div className="space-y-4">
+              {sizing.boards.filter(board => board.circuits.length > 0 || board.unsized.length > 0).map(board => (
+                <div key={board.boardId} className="border border-border rounded-lg">
+                  <div className="flex flex-wrap justify-between gap-2 p-3 border-b border-border">
+                    <strong>{board.boardName}</strong>
+                    <span className="text-sm text-text-muted">
+                      {board.circuits.length} sized · {board.unsized.length} not sized · {board.statusCounts.blocked} blocked · {board.statusCounts.manual} manual · {board.statusCounts.warn} warn · {board.statusCounts.pass} pass
+                    </span>
+                  </div>
+
+                  {board.aggregates.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead><tr className="text-left text-text-muted"><th className="p-2">Level</th><th className="p-2">Finding</th><th className="p-2">Category</th><th className="p-2 text-right">Circuits</th><th className="p-2">Affected</th></tr></thead>
+                        <tbody>
+                          {board.aggregates.map(finding => (
+                            <tr key={`${finding.id}-${finding.status}`} className="border-t border-border/60">
+                              <td className="p-2"><span className={`text-xs font-medium border rounded-full px-2.5 py-0.5 ${statusStyles[finding.status]}`}>{statusLabels[finding.status]}</span></td>
+                              <td className="p-2">{finding.title}</td>
+                              <td className="p-2 text-text-muted">{categoryLabels[finding.category]}</td>
+                              <td className="p-2 tabular-nums text-right">{finding.circuitCodes.length}</td>
+                              <td className="p-2 font-mono text-text-muted">{finding.circuitCodes.join(", ")}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {board.circuits.length > 0 && (
+                    <details className="border-t border-border">
+                      <summary className="cursor-pointer text-sm p-3">Per-circuit detail ({board.circuits.length})</summary>
+                      <div className="divide-y divide-border/60">
+                        {board.circuits.map(circuit => (
+                          <details key={circuit.circuitId} className="p-3">
+                            <summary className="cursor-pointer text-sm">
+                              <span className="font-mono">{circuit.code}</span> · {circuit.function} · In {circuit.breakerA ?? "—"} A · cable {circuit.cableMm2 ?? "—"} mm²{circuit.voltageDropPct !== null ? ` · drop ${circuit.voltageDropPct.toFixed(2)}%` : ""}
+                            </summary>
+                            <p className="text-xs text-text-muted mt-2">Design current {circuit.designCurrentA.toFixed(1)} A · worst branch {circuit.lengthM.toFixed(1)} m · {circuit.phases === 3 ? "three-phase" : "single-phase"}</p>
+                            <ul className="mt-2 space-y-2">
+                              {circuit.findings.map(finding => (
+                                <li key={finding.id} className="flex flex-wrap items-start gap-2 text-sm">
+                                  <span className={`text-xs font-medium border rounded-full px-2.5 py-0.5 ${statusStyles[finding.status]}`}>{statusLabels[finding.status]}</span>
+                                  <div className="min-w-0">
+                                    <p className="font-medium">{finding.title}</p>
+                                    <p className="text-text-muted">{finding.detail}</p>
+                                    <p className="text-xs text-text-muted">Source: {finding.source}</p>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  {board.unsized.length > 0 && (
+                    <p className="border-t border-border p-3 text-sm text-text-muted">
+                      Not sized: <span className="font-mono">{board.unsized.map(c => c.code).join(", ")}</span>. {board.unsized[0].reason}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

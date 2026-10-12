@@ -2,10 +2,10 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createHash } from "node:crypto";
 import { brand } from "./brand";
 import { logoMark } from "./logo";
-import { assumptions, snapshotSchema, type SimulationSnapshot } from "./simulation";
+import { assumptions, snapshotSchema, panelModelFromSelection, type SimulationSnapshot } from "./simulation";
 import { financialScenario } from "./solar";
 import { horizontalRoofArea } from "./building";
-import { panelLayout } from "./panel-layout";
+import { layoutPanels } from "./panel-layout";
 
 export async function generateSolarReport(raw: SimulationSnapshot) {
   const s = snapshotSchema.parse(raw);
@@ -49,12 +49,14 @@ export async function generateSolarReport(raw: SimulationSnapshot) {
   const input = s.building.solar;
   line(`Coordinates: ${input.latitude}, ${input.longitude} | Horizontal roof area: ${n(horizontalRoofArea(s.building.roof))} m²`);
   line(`Provenance: ${s.building.provenance}`);
-  line(`Panels: ${input.panels} x ${input.panelWatts} Wp | Capacity: ${n(s.result.capacityKwp)} kWp`);
+  line(`Panel model: ${s.panel.label} (${s.panel.panelModelId}) | ${s.panel.verified ? "VERIFIED SOURCE RECORD" : "UNVERIFIED - confirm against the datasheet"}`);
+  line(`Module dimensions: ${s.panel.widthM} x ${s.panel.lengthM} m | ${s.panel.watts} Wp each | Layout count: ${s.panel.layoutCount} (${s.panel.countSource === "layout" ? "from layout" : "manual override"})`);
+  line(`Energy model panels: ${input.panels} x ${input.panelWatts} Wp | Capacity: ${n(s.result.capacityKwp)} kWp`);
   line(`Tilt: ${input.tilt}° | Compass azimuth: ${input.azimuth}° | Mounting: ${input.mounting} | Losses: ${input.losses}%`);
   heading("Production estimates");
   line(`Annual energy: ${n(s.result.annualKwh)} kWh | Specific yield: ${n(s.result.specificYield)} kWh/kWp`, 12, true);
   line(`Declared source: ${s.result.source} | Dataset: ${s.result.database}`);
-  line(`Calculation version: ${s.result.engineVersion} | Snapshot schema: ${s.schemaVersion} | Layout: horizontal-grid-v1`);
+  line(`Calculation version: ${s.result.engineVersion} | Snapshot schema: ${s.schemaVersion} | Layout: metric-rectangles-v2`);
   line("This export reproduces a validated input/result snapshot. It is not independent authentication of the source data or professional review.");
   heading("Monthly energy (kWh)");
   if (y < 300) next();
@@ -69,19 +71,30 @@ export async function generateSolarReport(raw: SimulationSnapshot) {
   });
   y = chartBase - 40;
   next(); heading("Roof and preliminary panel layout");
-  line(`Panel size ${s.layout.width} x ${s.layout.length} m; ${s.layout.orientation}; setback ${s.layout.setback} m; gap ${s.layout.gap} m.`);
+  line(`Panel model: ${s.panel.label} (${s.panel.panelModelId}); ${s.panel.widthM} x ${s.panel.lengthM} m; ${s.panel.watts} Wp; ${s.panel.verified ? "verified record" : "UNVERIFIED - not a confirmed manufacturer record"}.`);
+  line(`Arrangement ${s.layout.orientation}; setback ${s.layout.setback} m; gap ${s.layout.gap} m; layout capacity ${n(s.panel.layoutCount * s.panel.watts / 1000)} kWp.`);
   let layout;
-  try { layout = panelLayout(s.building.roof, s.layout, input.azimuth); } catch (e) { line(`Layout unavailable: ${e instanceof Error ? e.message : "invalid geometry"}`); }
+  try { layout = layoutPanels(s.building.roof, panelModelFromSelection(s.panel), { orientation: s.layout.orientation, setback: s.layout.setback, gap: s.layout.gap }, input.azimuth, s.building.roofObstacles); } catch (e) { line(`Layout unavailable: ${e instanceof Error ? e.message : "invalid geometry"}`); }
   if (layout && layout.roof.length) {
     const [minX, minY, maxX, maxY] = layout.bounds;
     const scale = Math.min(470 / Math.max(1, maxX - minX), 250 / Math.max(1, maxY - minY));
     const bottom = y - 275;
-    const drawRing = (ring: [number, number][], panel: boolean) => {
-      ring.forEach((p, i) => { const q = ring[(i + 1) % ring.length]; page.drawLine({ start: { x: 60 + (p[0] - minX) * scale, y: bottom + (p[1] - minY) * scale }, end: { x: 60 + (q[0] - minX) * scale, y: bottom + (q[1] - minY) * scale }, thickness: panel ? .45 : 1.4, color: panel ? teal : navy }); });
-    };
-    drawRing(layout.roof, false); layout.panels.forEach(p => drawRing(p, true)); y = bottom - 20;
-    line(`Grid count: ${layout.panels.length}; energy model count: ${input.panels}. Diagram aligned to input azimuth, not north-up.`);
-    if (layout.panels.length !== input.panels) line("COUNT MISMATCH: Production uses the declared panel count, not this layout count.", 10, true);
+    layout.roof.forEach((p, i) => {
+      const q = layout.roof[(i + 1) % layout.roof.length];
+      page.drawLine({ start: { x: 60 + (p[0] - minX) * scale, y: bottom + (p[1] - minY) * scale }, end: { x: 60 + (q[0] - minX) * scale, y: bottom + (q[1] - minY) * scale }, thickness: 1.4, color: navy });
+    });
+    layout.obstacles.forEach(obstacle => obstacle.forEach((p, i) => {
+      const q = obstacle[(i + 1) % obstacle.length];
+      page.drawLine({ start: { x: 60 + (p[0] - minX) * scale, y: bottom + (p[1] - minY) * scale }, end: { x: 60 + (q[0] - minX) * scale, y: bottom + (q[1] - minY) * scale }, thickness: 1, color: rgb(.7, .45, .05) });
+    }));
+    // Real panel rectangles drawn at the projected metric scale, not a schematic grid.
+    layout.panels.forEach(panel => {
+      const xs = panel.map(p => p[0]), ys = panel.map(p => p[1]);
+      page.drawRectangle({ x: 60 + (Math.min(...xs) - minX) * scale, y: bottom + (Math.min(...ys) - minY) * scale, width: (Math.max(...xs) - Math.min(...xs)) * scale, height: (Math.max(...ys) - Math.min(...ys)) * scale, color: teal, opacity: .18, borderColor: teal, borderWidth: .5 });
+    });
+    y = bottom - 20;
+    line(`Layout count: ${layout.count}; energy model count: ${input.panels}. Diagram aligned to input azimuth, not north-up.`);
+    if (layout.count !== input.panels) line("COUNT MISMATCH: Production uses the declared panel count, not this layout count.", 10, true);
     line(layout.warning);
   } else line("No usable roof geometry supplied. A panel layout cannot be generated. The production estimate uses the manually declared panel count.");
   heading("Financial assumptions and annual balance");
@@ -94,7 +107,7 @@ export async function generateSolarReport(raw: SimulationSnapshot) {
   heading("Methodology, assumptions and limitations");
   line("Capacity (kWp) = panel count x panel Wp / 1000. Compass azimuth is converted to PVGIS aspect by subtracting 180 degrees. PVGIS models production using the supplied location, inclination, mounting and system-loss inputs.");
   line("Self-used energy = min(annual production x assumed share, annual demand). Export = production - self-use. Net savings = self-use x import tariff + export x export tariff - maintenance. Simple payback = installed cost / positive net savings.");
-  line("Roof area uses spherical GeoJSON area. The layout uses a local horizontal metre projection and a fixed grid with edge clearance. Pitch does not reconstruct 3D geometry. Obstacles and inter-row spacing for shading are not modelled.");
+  line("Roof area uses spherical GeoJSON area. The layout places real module rectangles at catalogue dimensions on a local horizontal metre projection with edge clearance. Pitch does not reconstruct 3D geometry. Obstacles and inter-row spacing for shading are not modelled.");
   for (const a of [...new Set([...assumptions, ...s.assumptions])]) { y -= 4; line(`- ${a}`); }
   line("Missing-data checks: roof pitch, roof structure, exact measurements, nearby shading, grid constraints and hourly demand require independent confirmation. Consult a qualified engineer before procurement, permitting or installation.");
   line("PDF font limitation: characters unsupported by the standard Latin font are rendered as '?'. The application retains the original text.", 8);

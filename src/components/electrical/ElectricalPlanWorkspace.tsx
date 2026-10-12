@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { PlanEditor } from "./plan-editor";
-import { electricalBuildingSchema, emptyBuilding, type ElectricalBuilding } from "@/lib/electrical";
+import { electricalBuildingSchema, emptyBuilding, parseElectricalBuildingDraft, type ElectricalBuilding } from "@/lib/electrical";
 
 const STORAGE_KEY = "caldriva-electrical-v1";
 
@@ -14,7 +14,7 @@ export function ElectricalPlanWorkspace() {
     if (typeof window === "undefined") return emptyBuilding();
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? electricalBuildingSchema.parse(JSON.parse(saved)) : emptyBuilding();
+      return saved ? parseElectricalBuildingDraft(JSON.parse(saved)) : emptyBuilding();
     } catch {
       return emptyBuilding();
     }

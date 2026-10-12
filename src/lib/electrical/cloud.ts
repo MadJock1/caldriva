@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { electricalBuildingSchema } from "./model";
+import { electricalBuildingSchema, migrateElectricalBuildingDraft } from "./model";
 
 export const electricalIdentitySchema = z.object({ id: z.uuid(), version: z.number().int().positive() });
 export type ElectricalIdentity = z.infer<typeof electricalIdentitySchema>;
 
+export const electricalDraftSchema = z.preprocess(migrateElectricalBuildingDraft, electricalBuildingSchema);
+
 export const electricalSaveSchema = z.object({
   identity: electricalIdentitySchema.nullable(),
-  draft: electricalBuildingSchema,
+  draft: electricalDraftSchema,
 });
 
 export const electricalSummarySchema = electricalIdentitySchema.extend({

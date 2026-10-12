@@ -1,4 +1,4 @@
-import { snapshotSchema } from "@/lib/simulation";
+import { migratedSnapshotSchema } from "@/lib/simulation";
 import { generateSolarReport } from "@/lib/solar-report";
 
 let start = Date.now(), count = 0;
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       if (length > 100000) { await reader.cancel(); return Response.json({ error: "Report input too large" }, { status: 413 }); }
       chunks.push(next.value);
     }
-    const parsed = snapshotSchema.safeParse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    const parsed = migratedSnapshotSchema.safeParse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
     if (!parsed.success) return Response.json({ error: "Invalid or inconsistent simulation snapshot" }, { status: 400 });
     const pdf = await generateSolarReport(parsed.data);
     return new Response(Buffer.from(pdf), { headers: { "Content-Type": "application/pdf", "Content-Disposition": 'attachment; filename="preliminary-solar-report.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" } });

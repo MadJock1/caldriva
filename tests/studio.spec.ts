@@ -51,7 +51,7 @@ test("unconfigured account access fails closed while local studio stays usable",
   await expect(page.getByText("Account access is not configured", { exact: false })).toBeVisible();
   await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
   await page.goto("/tools/solar?step=system");
-  await page.getByText("Save & account", { exact: false }).click();
+  await page.getByText("Save & account", { exact: false }).filter({ visible: true }).first().click();
   await page.getByRole("button", { name: "Save to account", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Sign in to save to your account" })).toBeVisible();
   await expect(page.getByLabel("Project name", { exact: true })).toBeEnabled();

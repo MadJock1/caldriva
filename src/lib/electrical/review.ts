@@ -18,6 +18,13 @@ export type CheckCategory =
 
 export type CheckStatus = "pass" | "warn" | "blocked" | "manual";
 
+export const statusLabels: Record<CheckStatus, string> = {
+  pass: "Pass",
+  warn: "Warn",
+  blocked: "Blocked",
+  manual: "Manual",
+};
+
 export type Check = {
   id: string;
   category: CheckCategory;

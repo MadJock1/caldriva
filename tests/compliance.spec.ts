@@ -50,3 +50,33 @@ test("screens machinery dates and assembly parts without granting conformity", a
   await page.getByLabel("Project jurisdiction", { exact: true }).selectOption("OTHER");
   await expect(page.locator('[data-reference="machinery-regulation"] summary')).toContainText("NOT EVALUATED");
 });
+
+test("distribution view links findings to their diagram elements", async ({ page }) => {
+  await page.goto("/tools/electrical");
+  await page.getByRole("button", { name: "Generate building" }).click();
+  await page.getByRole("button", { name: "6. Distribution" }).click();
+  await expect(page.getByRole("heading", { name: "Issues linked to the distribution" }).first()).toBeVisible();
+  const link = page.locator('a[href="#board-MDB"]').first();
+  await expect(link).toBeVisible();
+  await expect(page.locator("#board-MDB")).toHaveCount(1);
+  await expect(page.getByText(/linked to a board, circuit or floor/)).toBeVisible();
+});
+
+test("records immutable compliance revisions, detects staleness and exports a print-friendly PDF", async ({ page }) => {
+  await page.goto("/tools/electrical");
+  await page.getByRole("button", { name: "Generate building" }).click();
+  await page.getByRole("button", { name: "8. Standards & Compliance" }).click();
+  await page.getByLabel("Project classification", { exact: true }).selectOption("residential");
+  await page.getByLabel("Project jurisdiction", { exact: true }).selectOption("PT");
+  await page.getByLabel("Revision author").fill("E2E Reviewer");
+  await page.getByRole("button", { name: "Create immutable revision" }).click();
+  await expect(page.getByText(/Revision 1 ·/).first()).toBeVisible();
+  await expect(page.getByText("Current", { exact: true }).first()).toBeVisible();
+  await page.getByLabel("EMC scope", { exact: true }).selectOption("fixed_installation");
+  await expect(page.getByText("Stale — project changed").first()).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download PDF" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^compliance-CR-1-[0-9A-F]{8}\.pdf$/);
+});
+

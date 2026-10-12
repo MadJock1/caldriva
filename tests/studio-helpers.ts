@@ -5,4 +5,5 @@ export async function openConfiguredStudio(page: Page) {
   await page.goto("/tools/solar");
   await page.getByRole("button", { name: "Reopen draft", exact: true }).click();
   await page.getByRole("button", { name: "3. Configure Solar", exact: true }).click();
+  await page.getByLabel("Panel count").fill("10");
 }

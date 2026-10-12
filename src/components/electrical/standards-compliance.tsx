@@ -6,6 +6,7 @@ import type { ElectricalBuilding } from "@/lib/electrical";
 import { categoryLabels, complianceContextSchema, EARTHING_SYSTEMS, JURISDICTIONS, newComplianceContext, PROJECT_CATEGORIES, REGISTRY_VERSION, supplyContextKey, supplyPresets, type ComplianceContext } from "@/lib/engineering/compliance/context";
 import { CHECK_STATUSES, evaluateCompliance } from "@/lib/engineering/compliance/evaluate";
 import { jurisdictionPacks } from "@/lib/engineering/jurisdictions";
+import { ComplianceRevisions } from "./compliance-revisions";
 
 const field = "block w-full mt-1 p-2 rounded-lg border border-border bg-surface text-sm";
 export function StandardsCompliance({ building, onChange }: { building: ElectricalBuilding; onChange: (b: ElectricalBuilding) => void }) {
@@ -84,7 +85,12 @@ export function StandardsCompliance({ building, onChange }: { building: Electric
       {report.checks.map(check => <details key={check.id} className="border border-border rounded-lg p-3"><summary className="cursor-pointer text-sm">{check.title} · <strong className={check.status === "FAIL" ? "text-error" : check.status === "PASS" ? "text-success" : "text-warning"}>{check.status}</strong></summary><div className="text-sm space-y-2 mt-3 text-text-muted"><p>{check.explanation}</p><p>Rule: {check.id} · Reference: {check.reference} · Edition: {check.edition ?? "Not verified"}</p><p>Required inputs: {check.requiredInputs.join(", ")}</p><pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(check.evidence, null, 2)}</pre><p>Action: {check.action}</p><p>Reviewer status: {check.reviewerStatus}</p></div></details>)}
       <details className="border border-border rounded-lg p-3"><summary className="cursor-pointer">Calculation evidence — existing load engine</summary><p className="text-sm my-3">Estimated current: {report.calculations.current.result.toFixed(2)} A. Mathematical result only; no cable or breaker is selected.</p><pre className="text-xs whitespace-pre-wrap break-words">{JSON.stringify(report.calculations, null, 2)}</pre></details>
       <label className="text-sm block">Project review notes (author notes, not professional approval)<textarea className={field} maxLength={3000} rows={3} value={c.reviewNotes} onChange={e => update({ reviewNotes: e.target.value })} /></label>
-      <p className="text-xs text-text-muted">Results are derived from the current project on every edit. Signed review, evidence uploads, revision audit and PDF compliance reports are later milestones. Existing workflow labels do not establish an authenticated professional approval.</p>
+      <p className="text-xs text-text-muted">Results are derived from the current project on every edit. Signed review, qualification records, evidence uploads and an immutable audit trail remain later milestones. Existing workflow labels do not establish an authenticated professional approval.</p>
+    </section>
+
+    <section className="bg-surface border border-border rounded-xl p-5 space-y-3">
+      <h3 className="font-semibold text-lg">Compliance revisions &amp; reports</h3>
+      <ComplianceRevisions building={building} />
     </section>
   </div>;
 }

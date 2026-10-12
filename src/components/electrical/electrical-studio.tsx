@@ -18,6 +18,7 @@ import {
   electricalBuildingSchema,
   emptyBuilding,
   generateBuilding,
+  parseElectricalBuildingDraft,
   type BuildingBrief,
   type ElectricalBuilding,
   type ReviewStatus,
@@ -65,7 +66,7 @@ export function ElectricalStudio({ cloudDraft }: { cloudDraft?: { draft: Electri
       if (load) {
         const saved = localStorage.getItem(KEY);
         if (!saved) { setMessage("No draft saved in this browser yet."); return; }
-        const parsed = electricalBuildingSchema.parse(JSON.parse(saved));
+        const parsed = parseElectricalBuildingDraft(JSON.parse(saved));
         setBuilding(parsed);
         setIdentity(null);
         setStep("hierarchy");

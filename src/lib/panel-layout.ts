@@ -1,10 +1,18 @@
 import { z } from "zod";
 import type { MapPoint } from "./building";
 import { horizontalRoofArea } from "./building";
+import { panelModelSchema, type PanelModel } from "./solar-panel-catalog";
 
 export const layoutSettingsSchema = z.object({ width: z.number().min(.2).max(5), length: z.number().min(.2).max(5), setback: z.number().min(.05).max(10), gap: z.number().min(.01).max(2), orientation: z.enum(["portrait", "landscape"]) });
 export type LayoutSettings = z.infer<typeof layoutSettingsSchema>;
 export const defaultLayout: LayoutSettings = { width: 1.13, length: 1.72, setback: .5, gap: .02, orientation: "portrait" };
+
+export const layoutRequestSchema = z.object({ orientation: z.enum(["portrait", "landscape"]), setback: z.number().min(.05).max(10), gap: z.number().min(.01).max(2) });
+export type LayoutRequest = z.infer<typeof layoutRequestSchema>;
+export function layoutSettingsFor(model: PanelModel, request: LayoutRequest): LayoutSettings {
+  const parsed = panelModelSchema.parse(model), req = layoutRequestSchema.parse(request);
+  return layoutSettingsSchema.parse({ width: parsed.widthM, length: parsed.lengthM, setback: req.setback, gap: req.gap, orientation: req.orientation });
+}
 export type XY = [number, number];
 export type PanelLayout = { roof: XY[]; obstacles: XY[][]; panels: XY[][]; bounds: [number, number, number, number]; rejected: { outsideRoof: number; obstacle: number }; warning: string };
 const distance = (p: XY, a: XY, b: XY) => {
@@ -72,4 +80,24 @@ export function panelLayout(points: MapPoint[], raw: LayoutSettings, azimuth: nu
     }
   }
   return { roof, obstacles: projectedObstacles, panels, bounds, rejected, warning: "Metric local-plane layout. Obstacles are excluded, but their safety setbacks, roof pitch, structural limits, and shading remain unverified. This is not a sloped-surface or shading optimization." };
+}
+
+export type PanelLayoutResult = PanelLayout & {
+  panelModelId: string;
+  panelLabel: string;
+  count: number;
+  kwp: number;
+  widthM: number;
+  lengthM: number;
+  watts: number;
+  verified: boolean;
+};
+
+/** Panel count and kWp derived from the catalogue model dimensions and the roof geometry. */
+export function layoutPanels(points: MapPoint[], model: PanelModel, request: LayoutRequest, azimuth: number, obstacles: MapPoint[][] = []): PanelLayoutResult {
+  const parsed = panelModelSchema.parse(model);
+  const settings = layoutSettingsFor(parsed, request);
+  const layout = panelLayout(points, settings, azimuth, obstacles);
+  const count = layout.panels.length;
+  return { ...layout, panelModelId: parsed.id, panelLabel: parsed.label, count, kwp: count * parsed.watts / 1000, widthM: parsed.widthM, lengthM: parsed.lengthM, watts: parsed.watts, verified: parsed.verified };
 }

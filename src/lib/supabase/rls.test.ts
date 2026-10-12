@@ -28,6 +28,7 @@ beforeAll(async () => {
   await db.query("insert into auth.users(id) values ($1), ($2)", [alice, bob]);
   await db.exec(await loadMigration("202610100001_building_drafts.sql"));
   await db.exec(await loadMigration("202610100002_solar_simulations.sql"));
+  await db.exec(await loadMigration("202610120002_solar_snapshot_version2.sql"));
 }, 30000);
 afterAll(async () => { await db.close(); });
 
