@@ -21,3 +21,8 @@ test("quotation workspaces redirect anonymous visitors to sign in", async ({ pag
   await page.goto("/dashboard/engineer");
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test("the professional-review workspace fails closed for anonymous visitors", async ({ page }) => {
+  await page.goto("/dashboard/electrical/review");
+  await expect(page).toHaveURL(/\/login$/);
+});

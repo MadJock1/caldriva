@@ -35,6 +35,7 @@ export default function ElectricalDesignsPage() {
     <>
       <nav className="container pt-6 flex flex-wrap gap-5">
         <Link className="underline" href="/tools/electrical">Auto Electrical Design Studio →</Link>
+        <Link className="underline" href="/dashboard/electrical/review">Professional review →</Link>
         <Link className="underline" href="/dashboard/buildings">Your buildings →</Link>
       </nav>
       <Suspense fallback={<p role="status" className="container py-20">Loading your workspace…</p>}><CustomerDesigns /></Suspense>
