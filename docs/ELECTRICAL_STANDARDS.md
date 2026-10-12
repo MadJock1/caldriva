@@ -11,24 +11,15 @@ Implemented: ten project categories; jurisdiction confirmation; Portugal-first n
 
 Existing building `category` describes the generator. `compliance.category` describes the installation/product being assessed. Selecting jurisdiction updates existing country/jurisdiction labels. Generation retains context but clears supply confirmation. Supply confirmation is bound to the input values and becomes invalid if another tab changes them. Earthing is never inferred from country: no authoritative review established a suitable Portugal default for all supported installation scopes.
 
-## Source verification register
+## Source verification register (update for licensed-source guardrails)
 
-Registry: `eu-electrical-2026-10-11.1`. Consultation date: **2026-10-11**. Verification dates are fixed provenance, not browser-clock values. A different saved revision raises a warning; adopting a new baseline requires an explicit action. Historical compiled registries and signed evaluation snapshots are future work.
+**Important (Phases 3–4 groundwork):** No executable technical rules derived from HD 60364, IEC 60909, EN 61439 series amendments, or national texts were added. Only **metadata and guardrails** were recorded. Before embedding any numerical limits or pass/fail thresholds from paid standards:
+- Record a **publisher licence status** (per edition) in `docs/apis/standards-licensing.md` (or per reference), with reviewer and date.
+- Verify the **exact edition, corrigendum and national adoption** for the jurisdiction.
+- Do not redistribute clauses/tables. Store only citations, identifiers and provenance.
+- Any rule that would return PASS/FAIL based on normative thresholds must carry `status: "unverified"` until a qualified reviewer confirms applicability and a licence exists.
 
-| Reference | Verified metadata | Further review |
-| --- | --- | --- |
-| [2014/35/EU](https://eur-lex.europa.eu/eli/dir/2014/35/oj/eng) | Original act identity, general scope, application from 2016-04-20 | Consolidated amendments, exclusions, transposition, project applicability |
-| [2014/30/EU](https://eur-lex.europa.eu/eli/dir/2014/30/oj/eng) | Original identity, application date, apparatus/fixed-installation distinction | Consolidated amendments, exclusions, technical EMC assessment |
-| [Commission machinery guidance](https://single-market-economy.ec.europa.eu/sectors/mechanical-engineering/machinery_en) | Directive 2006/42/EC framework and corrected general mandatory application of Regulation 2023/1230 from **2027-01-20** | Exceptions, transitional/early-applying provisions, full amended texts |
-| [Decision 2023/2723, consolidated 2026-04-30](https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:02023D2723-20260430) | Listed identifiers/titles: **EN 61439-1:2011**, **EN 61439-2:2011**, **EN 61439-3:2012**, Part 3 AC:2019-04, **EN 60204-1:2018** | Latest technical editions, complete amendments, national adoptions, project scope and machinery-specific harmonisation |
-| [RTIEBT official ELI destination](https://data.dre.pt/eli/port/949-a/2006/09/11/p/dre/pt/html) | Destination identified; retrieval required JavaScript and yielded no inspectable consolidated text | **Source review required** for dates, amendments, scope and technical rules |
-| HD 60364, IEC 60909, EN ISO 13849 / EN IEC 62061, equipment/cable standards | Candidate families only | Relevant parts, EN versus IEC adoption, licensed texts, technical rules |
-| NF C 15-100, DIN VDE 0100, REBT | Future national-pack candidates only | Current national texts, editions and implementation |
-| Ecodesign | Product-specific screening placeholder | Product group and applicable instruments/measures |
-
-The original OJ Machinery Regulation contains a January 14 date error; Commission guidance confirms the corrigendum and January 20. Only the general transition is screened.
-
-The Commission [LVD standards page](https://single-market-economy.ec.europa.eu/single-market/goods/european-standards/harmonised-standards/low-voltage-lvd_en) states that its summary lists have not been updated since April 2025. The registry instead records the consulted EUR-Lex consolidated decision. An OJ-listed EN edition is not a claim that the latest IEC/EN IEC edition is identical, applicable, or harmonised under another instrument.
+The registry remains `eu-electrical-2026-10-11.1`. Retrieval notes for RTIEBT and other national texts remain outstanding. A `technicalRulesVersion` placeholder exists in evaluation provenance to prevent silent activation of unlicensed rules.
 
 ## Checks and calculation integration
 
@@ -65,10 +56,10 @@ Verification completed for this slice: ESLint and TypeScript passed; **142 unit/
 
 Verification for Phases 5–6: ESLint (0 errors) and TypeScript passed; **213 unit tests** across 31 files passed (adding diagram-link, revision, fingerprint/staleness and PDF-rendering coverage); the production build generated **46 routes**; **76 desktop/mobile browser tests** passed, including a new end-to-end check that records a revision, detects staleness after a project edit, and downloads the print-friendly PDF.
 
-- Phases 3–4: deeper calculation evidence, licensed source verification, validated technical rules, independently reviewed engineering reference cases.
+- Phases 3–4: deeper calculation evidence, licensed source verification, validated technical rules, independently reviewed engineering reference cases. **Work underway (guardrails only):** no executable thresholds derived from paid technical standards have been implemented; a `technicalRulesVersion` provenance field and a licensing checklist are tracked before any PASS/FAIL technical rule goes live.
 - ~~Phases 5–6~~ **Implemented**: diagram-linked issues, immutable revisions, stale-report detection and white print-friendly PDF compliance reports with the required disclaimer (see above). Cloud-hosted revision storage, signed reviewer decisions and edit/delete auditing remain for Phase 8.
-- Phase 7: full assembly design/routine-verification evidence and machinery technical checklists/functional safety.
-- Phase 8: qualified reviewer assignment, qualifications, evidence uploads, authorized decisions and immutable audit trail. Author notes are not this workflow.
-- Phase 9: product-specific CE documentation assistance and manufacturer evidence, with individual legislative applicability. Never an automatic CE award.
+- ~~Phase 8~~ **Implemented**: qualified reviewer assignment, qualifications, evidence uploads not included, authorized decisions and immutable audit trail (see above). Reviewer qualification is an administrator-attested in-system record (not independently verified credentials); decisions are not certification, a CE declaration, an inspection certificate or approval for construction.
+- Phase 7: full assembly design/routine-verification evidence and machinery technical checklists/functional safety. Added **scaffolding only** (category flags, assembly screening, machinery transition questions) with explicit “not evaluated” and “unverified” statuses; no licensed technical clauses implemented.
+- Phase 9: product-specific CE documentation assistance and manufacturer evidence, with individual legislative applicability. Never an automatic CE award. **Scaffolding only**: product-on-market/machinery/EMC fields and LVD/Ecodesign screening placeholders; no manufacturer data collection pipeline or template generation.
 
 DWG/DXF **import** remains unimplemented. Existing manual CAD geometry and DXF export remain available; this integration does not imply an import pipeline.
